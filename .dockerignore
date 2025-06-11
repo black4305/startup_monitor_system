@@ -1,0 +1,87 @@
+# 🗂️ Git 관련 파일
+.git
+.gitignore
+.github
+
+# 📝 문서 파일
+README.md
+docs/
+*.md
+
+# 🐍 Python 관련
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 🧪 테스트 관련
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# 🔧 환경 설정
+.env
+.env.local
+.env.*.local
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# 💻 IDE 관련
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 🖥️ 로그 파일
+*.log
+logs/
+
+# 📊 데이터 파일 (선택적)
+data/
+*.csv
+*.json
+*.sqlite
+*.db
+
+# 🖼️ 이미지 파일
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.pdf
+
+# 📦 노드 모듈 (있다면)
+node_modules/
+npm-debug.log*
+
+# 💾 백업 파일
+*.bak
+*.backup
+*.tmp
+
+# 🖥️ 시스템 파일
+.DS_Store
+Thumbs.db 

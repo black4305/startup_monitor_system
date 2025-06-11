@@ -1,0 +1,14 @@
+{
+  "model_type": "AppleSiliconDeepLearningModel",
+  "version": "1.0",
+  "created_at": "2025-06-08T07:36:10.901706",
+  "accuracy": 1.0,
+  "training_samples": 803,
+  "test_samples": 201,
+  "device_compatibility": [
+    "cpu",
+    "mps",
+    "cuda"
+  ],
+  "apple_silicon_optimized": true
+}

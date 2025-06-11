@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+
+{% block title %}지원사업 검색 - AI 지원사업 모니터링{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-search"></i> 지원사업 검색</h1>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-body">
+                <!-- 배치 진행 상황 -->
+                <div id="batchProgress" class="mb-4">
+                    <h5><i class="fas fa-tasks"></i> 배치 처리 상황</h5>
+                    <div class="progress mb-2">
+                        <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div id="progressText" class="text-muted">배치 정보를 로드하는 중...</div>
+                </div>
+                
+                <!-- 검색 버튼들 -->
+                <div class="mb-3">
+                    <button id="searchBtn" class="btn btn-primary btn-lg me-2" onclick="startSearch()">
+                        <i class="fas fa-search"></i> AI 검색 시작
+                    </button>
+                    <button id="nextBatchBtn" class="btn btn-success btn-lg me-2" onclick="runNextBatch()" disabled>
+                        <i class="fas fa-forward"></i> 다음 배치 실행
+                    </button>
+                    <button id="refreshBtn" class="btn btn-info btn-lg" onclick="refreshProgress()">
+                        <i class="fas fa-sync-alt"></i> 상태 새로고침
+                    </button>
+                </div>
+                
+                <div id="searchProgress" class="mt-3" style="display: none;">
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 100%"></div>
+                    </div>
+                    <p class="mt-2">🤖 AI가 지원사업을 분석하고 있습니다...</p>
+                </div>
+                
+                <div id="searchResults" class="mt-4"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentBatchInfo = null;
+
+// 페이지 로드 시 배치 진행 상황 확인
+document.addEventListener('DOMContentLoaded', function() {
+    refreshProgress();
+});
+
+async function refreshProgress() {
+    try {
+        const response = await fetch('/api/batch/progress');
+        const progress = await response.json();
+        
+        if (progress.error) {
+            document.getElementById('progressText').textContent = `오류: ${progress.error}`;
+            return;
+        }
+        
+        currentBatchInfo = progress;
+        updateProgressDisplay(progress);
+        
+    } catch (error) {
+        document.getElementById('progressText').textContent = `진행 상황 조회 실패: ${error}`;
+    }
+}
+
+function updateProgressDisplay(progress) {
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const nextBatchBtn = document.getElementById('nextBatchBtn');
+    
+    const percentage = progress.progress_percentage || 0;
+    progressBar.style.width = `${percentage}%`;
+    progressBar.textContent = `${percentage.toFixed(1)}%`;
+    
+    progressText.innerHTML = `
+        📊 전체 ${progress.total_sites}개 사이트 중 ${progress.completed_batches * progress.batch_size}개 완료<br>
+        🔄 배치 ${progress.completed_batches}/${progress.total_batches} 완료 (배치당 ${progress.batch_size}개 사이트)
+    `;
+    
+    // 다음 배치 버튼 활성화/비활성화
+    if (progress.completed_batches < progress.total_batches) {
+        nextBatchBtn.disabled = false;
+        nextBatchBtn.innerHTML = `<i class="fas fa-forward"></i> 배치 ${progress.completed_batches + 1} 실행`;
+    } else {
+        nextBatchBtn.disabled = true;
+        nextBatchBtn.innerHTML = `<i class="fas fa-check"></i> 모든 배치 완료`;
+    }
+}
+
+async function startSearch() {
+    const searchBtn = document.getElementById('searchBtn');
+    const searchProgress = document.getElementById('searchProgress');
+    const searchResults = document.getElementById('searchResults');
+    
+    searchBtn.disabled = true;
+    searchProgress.style.display = 'block';
+    searchResults.innerHTML = '';
+    
+    try {
+        const response = await fetch('/api/search', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            searchResults.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+        } else {
+            displayResults(result);
+            // 검색 후 배치 진행 상황 업데이트
+            refreshProgress();
+        }
+    } catch (error) {
+        searchResults.innerHTML = `<div class="alert alert-danger">검색 중 오류가 발생했습니다: ${error}</div>`;
+    } finally {
+        searchBtn.disabled = false;
+        searchProgress.style.display = 'none';
+    }
+}
+
+async function runNextBatch() {
+    const nextBatchBtn = document.getElementById('nextBatchBtn');
+    const searchResults = document.getElementById('searchResults');
+    
+    nextBatchBtn.disabled = true;
+    nextBatchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 배치 실행 중...';
+    
+    try {
+        const response = await fetch('/api/batch/next', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            searchResults.innerHTML = `
+                <div class="alert alert-success">
+                    <h5>✅ ${result.message}</h5>
+                    <p>배치 ${result.batch_number}: ${result.programs_found}개 지원사업 발견</p>
+                </div>
+            `;
+            
+            // 진행 상황 업데이트
+            refreshProgress();
+            
+            // 통합 결과 로드
+            loadCombinedResults();
+            
+        } else if (result.status === 'completed') {
+            searchResults.innerHTML = `
+                <div class="alert alert-info">
+                    <h5>🎉 ${result.message}</h5>
+                </div>
+            `;
+            refreshProgress();
+            loadCombinedResults();
+            
+        } else {
+            searchResults.innerHTML = `
+                <div class="alert alert-danger">
+                    <h5>❌ 배치 실행 실패</h5>
+                    <p>${result.error || 'Unknown error'}</p>
+                </div>
+            `;
+        }
+        
+    } catch (error) {
+        searchResults.innerHTML = `<div class="alert alert-danger">배치 실행 중 오류: ${error}</div>`;
+    } finally {
+        nextBatchBtn.disabled = false;
+        refreshProgress();
+    }
+}
+
+async function loadCombinedResults() {
+    try {
+        const response = await fetch('/api/batch/results');
+        const result = await response.json();
+        
+        if (result.error) {
+            console.error('통합 결과 로드 실패:', result.error);
+            return;
+        }
+        
+        if (result.programs && result.programs.length > 0) {
+            displayBatchResults(result);
+        }
+        
+    } catch (error) {
+        console.error('통합 결과 로드 중 오류:', error);
+    }
+}
+
+function displayResults(result) {
+    const searchResults = document.getElementById('searchResults');
+    const summary = result.summary || {};
+    const recommendations = result.top_recommendations || [];
+    const batchInfo = result.batch_info || {};
+    
+    let html = `
+        <div class="alert alert-success">
+            <h5>✅ 검색 완료!</h5>
+            <p>총 ${summary.total_programs || 0}개 지원사업 발견</p>
+            <p>현재 정확도: <strong>${result.current_accuracy || 0}%</strong></p>
+            ${batchInfo.total_batches ? `<p>배치 진행: ${batchInfo.completed_batches}/${batchInfo.total_batches}</p>` : ''}
+        </div>
+    `;
+    
+    if (recommendations.length > 0) {
+        html += '<h5>🏆 상위 추천 지원사업:</h5>';
+        recommendations.forEach((rec, index) => {
+            html += `
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title">${rec.title}</h6>
+                        <p class="card-text">${rec.content ? rec.content.substring(0, 200) + '...' : ''}</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="badge bg-primary">점수: ${rec.score || rec.enhanced_score}</span>
+                                <span class="badge bg-info">${rec.site}</span>
+                                ${rec.batch_number ? `<span class="badge bg-secondary">배치 ${rec.batch_number}</span>` : ''}
+                            </div>
+                            <div>
+                                <button class="btn btn-success btn-sm" onclick="recordFeedback(${index}, 'keep')">
+                                    <i class="fas fa-heart"></i> 관심있음
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="recordFeedback(${index}, 'delete')">
+                                    <i class="fas fa-trash"></i> 삭제
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    }
+    
+    searchResults.innerHTML = html;
+    window.currentResults = recommendations;
+}
+
+function displayBatchResults(result) {
+    const searchResults = document.getElementById('searchResults');
+    const programs = result.programs || [];
+    const batchInfo = result.batch_info || {};
+    
+    let html = `
+        <div class="alert alert-info">
+            <h5>📊 통합 배치 결과</h5>
+            <p>총 ${result.total_programs}개 지원사업 (상위 ${programs.length}개 표시)</p>
+            <p>배치 진행: ${batchInfo.completed_batches}/${batchInfo.total_batches}</p>
+        </div>
+    `;
+    
+    if (programs.length > 0) {
+        html += '<h5>🏆 상위 추천 지원사업:</h5>';
+        programs.forEach((rec, index) => {
+            html += `
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title">${rec.title}</h6>
+                        <p class="card-text">${rec.content ? rec.content.substring(0, 200) + '...' : ''}</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="badge bg-primary">점수: ${rec.personalized_score}</span>
+                                <span class="badge bg-info">${rec.site_name}</span>
+                                <span class="badge bg-secondary">배치 ${rec.batch_number}</span>
+                            </div>
+                            <div>
+                                <button class="btn btn-success btn-sm" onclick="recordBatchFeedback(${index}, 'keep')">
+                                    <i class="fas fa-heart"></i> 관심있음
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="recordBatchFeedback(${index}, 'delete')">
+                                    <i class="fas fa-trash"></i> 삭제
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    }
+    
+    searchResults.innerHTML = html;
+    window.currentBatchResults = programs;
+}
+
+async function recordFeedback(index, action) {
+    const program = window.currentResults[index];
+    
+    try {
+        const response = await fetch('/api/feedback', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                program_data: program,
+                action: action
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(`✅ ${action === 'keep' ? '관심있음' : '삭제'} 피드백이 기록되었습니다!`);
+            // 해당 카드 숨기기
+            document.querySelectorAll('.card')[index + 1].style.display = 'none';
+        } else {
+            alert(`❌ 오류: ${result.error}`);
+        }
+    } catch (error) {
+        alert(`❌ 피드백 기록 실패: ${error}`);
+    }
+}
+
+async function recordBatchFeedback(index, action) {
+    const program = window.currentBatchResults[index];
+    
+    try {
+        const response = await fetch('/api/feedback', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                program_data: program,
+                action: action
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(`✅ ${action === 'keep' ? '관심있음' : '삭제'} 피드백이 기록되었습니다!`);
+            // 해당 카드 숨기기
+            document.querySelectorAll('.card')[index + 1].style.display = 'none';
+        } else {
+            alert(`❌ 오류: ${result.error}`);
+        }
+    } catch (error) {
+        alert(`❌ 피드백 기록 실패: ${error}`);
+    }
+}
+</script>
+{% endblock %}

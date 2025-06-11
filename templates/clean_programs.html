@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>전체 프로그램 목록 - AI 지원사업 모니터링</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .table-container { 
+            background: white; 
+            border-radius: 10px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+        }
+        .program-title { cursor: pointer; }
+        .program-title:hover { color: #0d6efd; text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-robot"></i> AI 지원사업 모니터링
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/">대시보드</a>
+                <a class="nav-link active" href="/programs">전체 목록</a>
+                <a class="nav-link" href="/deleted">삭제된 목록</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- 제목 -->
+        <div class="row mb-4">
+            <div class="col-12 d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-list text-primary"></i> 전체 프로그램 목록</h1>
+                    <p class="text-muted">총 {{ total_programs }}개 프로그램 (페이지 {{ current_page }}/{{ total_pages }})</p>
+                </div>
+                <a href="/" class="btn btn-outline-primary">
+                    <i class="fas fa-arrow-left"></i> 대시보드로
+                </a>
+            </div>
+        </div>
+
+        <!-- 프로그램 목록 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="table-container p-4">
+                    {% if programs %}
+                    
+                    <!-- 다중 선택 컨트롤 -->
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                        <label class="form-check-label" for="selectAll">
+                                            <strong>전체 선택</strong>
+                                        </label>
+                                    </div>
+                                    <small class="text-muted">선택된 항목: <span id="selectedCount">0</span>개</small>
+                                </div>
+                                <div>
+                                    <button class="btn btn-danger" id="bulkDeleteBtn" onclick="bulkDeletePrograms()" disabled>
+                                        <i class="fas fa-trash-alt"></i> 선택된 항목 삭제
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th width="5%">선택</th>
+                                    <th width="45%">제목</th>
+                                    <th width="15%">사이트</th>
+                                    <th width="10%">AI 점수</th>
+                                    <th width="10%">마감일</th>
+                                    <th width="15%">액션</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for program in programs %}
+                                <tr id="row-{{ program.external_id or program.id }}">
+                                    <td>
+                                        <div class="form-check">
+                                            <input class="form-check-input program-checkbox" type="checkbox" 
+                                                   id="check-{{ program.external_id or program.id }}" value="{{ program.external_id or program.id }}" 
+                                                   onchange="updateSelectedCount()">
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="program-title" onclick="toggleContent('{{ program.external_id or program.id }}')">
+                                            <strong>{{ program.title }}</strong>
+                                        </div>
+                                        <div id="content-{{ program.external_id or program.id }}" class="collapse">
+                                            <small class="text-muted">
+                                                {{ (program.content or '')[:200] }}{% if (program.content or '')|length > 200 %}...{% endif %}
+                                            </small>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ program.site_name or '정보없음' }}</small>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">{{ "%.1f"|format(program.ai_score or 0) }}</span>
+                                    </td>
+                                    <td>
+                                        <small>{{ program.deadline or '정보없음' }}</small>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            {% if program.url %}
+                                            <a href="{{ program.url }}" target="_blank" 
+                                               class="btn btn-sm btn-outline-success" title="원본 보기">
+                                                <i class="fas fa-external-link-alt"></i>
+                                            </a>
+                                            {% else %}
+                                            <button class="btn btn-sm btn-outline-danger" disabled title="링크 없음">
+                                                <i class="fas fa-unlink"></i>
+                                            </button>
+                                            {% endif %}
+                                            
+                                            <button class="btn btn-sm btn-outline-warning" 
+                                                    onclick="deleteProgram('{{ program.external_id or program.id }}')" title="AI 학습 (불필요)">
+                                                <i class="fas fa-brain"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 페이지네이션 -->
+                    {% if total_pages > 1 %}
+                    <nav aria-label="Page navigation" class="mt-4">
+                        <ul class="pagination justify-content-center">
+                            {% if current_page > 1 %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ current_page - 1 }}{% if search_query %}&search={{ search_query }}{% endif %}">이전</a>
+                            </li>
+                            {% endif %}
+                            
+                            {% for page_num in range(1, total_pages + 1) %}
+                                {% if page_num == current_page %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ page_num }}</span>
+                                </li>
+                                {% elif page_num >= current_page - 2 and page_num <= current_page + 2 %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_num }}{% if search_query %}&search={{ search_query }}{% endif %}">{{ page_num }}</a>
+                                </li>
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% if current_page < total_pages %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ current_page + 1 }}{% if search_query %}&search={{ search_query }}{% endif %}">다음</a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+
+                    {% else %}
+                    <div class="alert alert-info text-center">
+                        <i class="fas fa-info-circle fa-3x mb-3"></i>
+                        <h4>아직 프로그램이 없습니다</h4>
+                        <p>AI가 수집한 지원사업 정보가 없습니다.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 삭제 이유 선택 모달 -->
+    <div class="modal fade" id="deleteReasonModal" tabindex="-1" aria-labelledby="deleteReasonModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteReasonModalLabel">
+                        <i class="fas fa-brain text-warning"></i> AI 학습 - 삭제 이유 선택
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted mb-3">왜 이 프로그램이 불필요한가요? AI가 더 정확한 추천을 위해 학습합니다.</p>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="deleteReason" id="reason1" value="관심 없음">
+                        <label class="form-check-label" for="reason1">
+                            <i class="fas fa-meh text-secondary"></i> 관심 없는 분야
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="deleteReason" id="reason2" value="자격 요건 안 맞음">
+                        <label class="form-check-label" for="reason2">
+                            <i class="fas fa-user-times text-danger"></i> 자격 요건이 안 맞음
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="deleteReason" id="reason3" value="링크 오류">
+                        <label class="form-check-label" for="reason3">
+                            <i class="fas fa-unlink text-danger"></i> 링크가 없거나 접속 안됨
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="deleteReason" id="reason4" value="마감일 지났음">
+                        <label class="form-check-label" for="reason4">
+                            <i class="fas fa-clock text-info"></i> 마감일이 지났음
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="deleteReason" id="reason5" value="중복 프로그램">
+                        <label class="form-check-label" for="reason5">
+                            <i class="fas fa-copy text-primary"></i> 중복되는 프로그램
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="deleteReason" id="reason6" value="정보 부족">
+                        <label class="form-check-label" for="reason6">
+                            <i class="fas fa-question-circle text-secondary"></i> 정보가 부족함
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="deleteReason" id="reason7" value="기타">
+                        <label class="form-check-label" for="reason7">
+                            <i class="fas fa-ellipsis-h text-muted"></i> 기타
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="deleteReason" id="reason8" value="지원완료">
+                        <label class="form-check-label" for="reason8">
+                            <i class="fas fa-check-circle text-success"></i> 지원완료 (이미 지원함)
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                    <button type="button" class="btn btn-warning" onclick="confirmDeleteWithReason()">
+                        <i class="fas fa-brain"></i> AI 학습 시작
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentProgramId = null;
+        
+        function toggleContent(programId) {
+            const content = document.getElementById(`content-${programId}`);
+            if (content.classList.contains('show')) {
+                content.classList.remove('show');
+            } else {
+                content.classList.add('show');
+            }
+        }
+
+        function deleteProgram(programId) {
+            // 프로그램 ID 저장하고 모달 띄우기
+            currentProgramId = programId;
+            
+            // 라디오 버튼 초기화
+            const radioButtons = document.querySelectorAll('input[name="deleteReason"]');
+            radioButtons.forEach(radio => radio.checked = false);
+            
+            // 모달 표시
+            const modal = new bootstrap.Modal(document.getElementById('deleteReasonModal'));
+            modal.show();
+        }
+        
+        function confirmDeleteWithReason() {
+            // 선택된 이유 찾기
+            const selectedReason = document.querySelector('input[name="deleteReason"]:checked');
+            
+            if (!selectedReason) {
+                alert('삭제 이유를 선택해주세요.');
+                return;
+            }
+            
+            const reason = selectedReason.value;
+            
+            // 모달 닫기
+            const modal = bootstrap.Modal.getInstance(document.getElementById('deleteReasonModal'));
+            modal.hide();
+            
+            // 일괄 삭제인지 개별 삭제인지 확인
+            if (currentProgramId === 'bulk') {
+                // 일괄 삭제 처리
+                const selectedPrograms = Array.from(document.querySelectorAll('.program-checkbox:checked')).map(checkbox => checkbox.value);
+                
+                fetch('/api/bulk-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ program_ids: selectedPrograms, reason: reason })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        selectedPrograms.forEach(id => {
+                            const row = document.getElementById(`row-${id}`);
+                            if (row) {
+                                row.style.display = 'none';
+                            }
+                        });
+                        
+                        alert(`AI가 ${selectedPrograms.length}개 항목을 "${reason}" 이유로 학습했습니다. 더 정확한 추천을 위해 활용됩니다.`);
+                        
+                        // 선택 상태 초기화
+                        document.getElementById('selectAll').checked = false;
+                        updateSelectedCount();
+                        
+                        setTimeout(() => location.reload(), 1500);
+                    } else {
+                        alert('일괄 삭제 실패: ' + (data.error || '알 수 없는 오류'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('일괄 삭제 중 오류가 발생했습니다.');
+                });
+                
+                // 모달 제목 복원
+                document.getElementById('deleteReasonModalLabel').innerHTML = 
+                    '<i class="fas fa-brain text-warning"></i> AI 학습 - 삭제 이유 선택';
+                    
+            } else {
+                // 개별 삭제 처리
+                fetch(`/api/delete/${currentProgramId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason: reason })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById(`row-${currentProgramId}`).style.display = 'none';
+                        
+                        alert(`AI가 "${reason}" 이유로 학습했습니다. 더 정확한 추천을 위해 활용됩니다.`);
+                        
+                        setTimeout(() => location.reload(), 1500);
+                    } else {
+                        alert('AI 학습 실패: ' + (data.error || '알 수 없는 오류'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('AI 학습 중 오류가 발생했습니다.');
+                });
+            }
+        }
+
+        function toggleSelectAll() {
+            const checkboxes = document.querySelectorAll('.program-checkbox');
+            const selectAll = document.getElementById('selectAll').checked;
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectAll;
+            });
+            
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            const checkboxes = document.querySelectorAll('.program-checkbox');
+            const selectedCount = Array.from(checkboxes).filter(checkbox => checkbox.checked).length;
+            
+            document.getElementById('selectedCount').textContent = selectedCount;
+            document.getElementById('bulkDeleteBtn').disabled = selectedCount === 0;
+        }
+
+        function bulkDeletePrograms() {
+            const selectedPrograms = Array.from(document.querySelectorAll('.program-checkbox:checked')).map(checkbox => checkbox.value);
+            
+            if (selectedPrograms.length === 0) {
+                alert('선택된 항목이 없습니다.');
+                return;
+            }
+            
+            // 일괄 삭제 모드 설정
+            currentProgramId = 'bulk';
+            
+            // 라디오 버튼 초기화
+            const radioButtons = document.querySelectorAll('input[name="deleteReason"]');
+            radioButtons.forEach(radio => radio.checked = false);
+            
+            // 모달 제목 변경
+            document.getElementById('deleteReasonModalLabel').innerHTML = 
+                '<i class="fas fa-brain text-warning"></i> AI 학습 - 일괄 삭제 이유 선택';
+            
+            // 모달 표시
+            const modal = new bootstrap.Modal(document.getElementById('deleteReasonModal'));
+            modal.show();
+        }
+    </script>
+</body>
+</html> 
