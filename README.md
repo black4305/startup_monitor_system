@@ -559,3 +559,4 @@ CACHE_DURATION=300
 
 이 시스템은 **리팩토링된 모듈화 구조**로 설계되어 유지보수성과 확장성을 모두 갖춘 **프로덕션 레디** 상태의 AI 서비스입니다. # CI/CD 테스트 완료
 # Docker CI/CD 파이프라인 테스트 완료
+# GitHub Actions 테스트 Thu Jun 12 11:10:31 KST 2025
