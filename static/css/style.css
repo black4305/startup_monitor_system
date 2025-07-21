@@ -1,0 +1,153 @@
+/* AI 지원사업 모니터링 시스템 - 메인 스타일시트 */
+
+/* 기본 스타일 */
+body { 
+    background-color: #f8f9fa; 
+}
+
+/* 통계 카드 */
+.stat-card { 
+    border-radius: 15px; 
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+    transition: transform 0.2s;
+}
+
+.stat-card:hover { 
+    transform: translateY(-2px); 
+}
+
+/* 테이블 컨테이너 */
+.table-container { 
+    background: white; 
+    border-radius: 10px; 
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+}
+
+/* 새로고침 인디케이터 */
+.refresh-indicator {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+}
+
+/* 펄스 애니메이션 */
+.pulse {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+/* 스크롤 탑 버튼 */
+.scroll-top-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 999;
+}
+
+.scroll-top-btn.show {
+    opacity: 1;
+}
+
+/* 로딩 스피너 */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+/* 프로그램 카드 */
+.program-card {
+    transition: all 0.3s ease;
+    border: 1px solid #e0e0e0;
+}
+
+.program-card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+
+/* AI 점수 배지 */
+.ai-score-badge {
+    font-size: 0.9rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+}
+
+/* 진행 바 */
+.progress-custom {
+    height: 25px;
+    border-radius: 15px;
+    background-color: #e9ecef;
+}
+
+.progress-bar-custom {
+    border-radius: 15px;
+    background: linear-gradient(90deg, #007bff 0%, #0056b3 100%);
+}
+
+/* 테이블 스타일 */
+.table-hover tbody tr {
+    transition: background-color 0.2s;
+}
+
+.table-hover tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* 액션 버튼 */
+.action-btn {
+    transition: all 0.2s;
+}
+
+.action-btn:hover {
+    transform: scale(1.1);
+}
+
+/* 모달 커스텀 */
+.modal-header {
+    background-color: #007bff;
+    color: white;
+}
+
+.modal-header .btn-close {
+    filter: invert(1);
+}
+
+/* 알림 메시지 */
+.alert-custom {
+    border-radius: 10px;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 반응형 조정 */
+@media (max-width: 768px) {
+    .stat-card {
+        margin-bottom: 1rem;
+    }
+    
+    .table-container {
+        overflow-x: auto;
+    }
+    
+    .refresh-indicator {
+        top: 60px;
+        right: 10px;
+        left: 10px;
+    }
+}

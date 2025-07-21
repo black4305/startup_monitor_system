@@ -290,29 +290,37 @@ class AIModelManager:
         scores = []
         weights = []
         
+        # 강화학습으로 최적화된 가중치 사용 (기본값: 균등 분배)
+        optimized_weights = {
+            'bert': 0.3333,
+            'sentence': 0.3333,
+            'colab': 0.3333,
+            'deep_learning': 0.3333
+        }
+        
         # BERT 점수
         if self.models_loaded['bert']:
             bert_score = self.calculate_bert_relevance(text)
             scores.append(bert_score)
-            weights.append(Config.BERT_WEIGHT)
+            weights.append(optimized_weights['bert'])
         
         # Sentence 점수
         if self.models_loaded['sentence']:
             sentence_score = self.calculate_sentence_relevance(text)
             scores.append(sentence_score)
-            weights.append(0.3)
+            weights.append(optimized_weights['sentence'])
         
         # Colab 모델 점수
         if self.models_loaded['colab']:
             colab_score = self.calculate_colab_relevance(text)
             scores.append(colab_score)
-            weights.append(Config.COLAB_MODEL_WEIGHT)
+            weights.append(optimized_weights['colab'])
         
         # 딥러닝 점수
         if self.models_loaded['deep_learning']:
             dl_score = self.calculate_deep_learning_relevance(text)
             scores.append(dl_score)
-            weights.append(0.5)
+            weights.append(optimized_weights['deep_learning'])
         
         # 가중 평균 계산
         if scores:

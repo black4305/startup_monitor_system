@@ -25,6 +25,9 @@ import warnings
 from datetime import datetime
 warnings.filterwarnings('ignore')
 
+# 로깅 설정
+from .logger import get_logger
+
 # 강화학습 라이브러리 (수정된 import)
 try:
     import gymnasium as gym
@@ -188,7 +191,7 @@ class StartupClassifierEnv(BaseEnv):
                 self.best_score = accuracy
             
         except Exception as e:
-            print(f"⚠️ 평가 중 오류: {e}")
+            self.logger.error(f"⚠️ 평가 중 오류: {e}")
             reward = -1.0
             next_state, _ = self.reset()
             done = True
@@ -242,8 +245,9 @@ class ReinforcementLearningOptimizer:
     
     def __init__(self, model_path: str = None, test_data_path: str = None, ai_engine=None):
         """초기화"""
-        print("🚀 강화학습 최적화 시스템 초기화!")
-        print("="*50)
+        self.logger = get_logger(__name__)
+        self.logger.info("🚀 강화학습 최적화 시스템 초기화!")
+        self.logger.info("="*50)
         
         # 의존성 체크
         if not GYM_AVAILABLE:
@@ -251,32 +255,53 @@ class ReinforcementLearningOptimizer:
         if not SB3_AVAILABLE:
             raise ImportError("stable-baselines3가 설치되지 않았습니다: pip install stable-baselines3")
         if not OPTUNA_AVAILABLE:
-            print("⚠️ optuna가 설치되지 않아 하이퍼파라미터 최적화를 사용할 수 없습니다")
+            self.logger.warning("⚠️ optuna가 설치되지 않아 하이퍼파라미터 최적화를 사용할 수 없습니다")
         
         # 모델 및 데이터 로드
         if ai_engine:
             # AI 엔진으로부터 모델 사용
             self.model = ai_engine
             self.test_texts, self.test_labels = self._get_test_data_from_ai_engine(ai_engine)
-            print("✅ AI 엔진으로부터 모델 및 데이터 로드 완료")
+            self.logger.info("✅ AI 엔진으로부터 모델 및 데이터 로드 완료")
         else:
             # 파일로부터 로드
             if model_path and os.path.exists(model_path):
-                print("📦 모델 로딩 중...")
+                self.logger.info("📦 모델 로딩 중...")
                 with open(model_path, 'rb') as f:
                     self.model = pickle.load(f)
+                
+                # 메타데이터 파일 확인 및 로드
+                metadata_path = model_path.replace('.pkl', '_metadata.json')
+                if os.path.exists(metadata_path):
+                    self.logger.info("📋 모델 메타데이터 로딩 중...")
+                    with open(metadata_path, 'r', encoding='utf-8') as f:
+                        metadata = json.load(f)
+                    
+                    # 메타데이터 적용
+                    if hasattr(self.model, 'threshold'):
+                        self.model.threshold = metadata.get('threshold', 0.3)
+                        self.logger.info(f"✅ 임계값 설정: {self.model.threshold}")
+                    
+                    if hasattr(self.model, 'model_weights') and 'model_weights' in metadata:
+                        self.model.model_weights = metadata['model_weights']
+                        self.logger.info(f"✅ 모델 가중치 설정: {self.model.model_weights}")
+                    
+                    # 성능 정보 출력
+                    if 'performance' in metadata:
+                        perf = metadata['performance']
+                        self.logger.info(f"📊 모델 성능 - 정확도: {perf.get('accuracy', 0):.1%}, F1: {perf.get('f1', 0):.3f}")
             else:
-                print("⚠️ 모델 파일을 찾을 수 없습니다. 기본 모델을 사용합니다.")
+                self.logger.warning("⚠️ 모델 파일을 찾을 수 없습니다. 기본 모델을 사용합니다.")
                 self.model = self._create_dummy_model()
             
             if test_data_path and os.path.exists(test_data_path):
-                print("📊 테스트 데이터 로딩 중...")
+                self.logger.info("📊 테스트 데이터 로딩 중...")
                 with open(test_data_path, 'r', encoding='utf-8') as f:
                     test_data = json.load(f)
                 self.test_texts = test_data['texts']
                 self.test_labels = test_data['labels']
             else:
-                print("⚠️ 테스트 데이터를 찾을 수 없습니다. 기본 데이터를 사용합니다.")
+                self.logger.warning("⚠️ 테스트 데이터를 찾을 수 없습니다. 기본 데이터를 사용합니다.")
                 self.test_texts, self.test_labels = self._create_dummy_test_data()
         
         # 추가 테스트 케이스 (문제 케이스들)
@@ -293,11 +318,11 @@ class ReinforcementLearningOptimizer:
             self.test_texts.append(text)
             self.test_labels.append(label)
         
-        print(f"✅ 총 {len(self.test_texts)}개 테스트 케이스 로드 완료")
+        self.logger.info(f"✅ 총 {len(self.test_texts)}개 테스트 케이스 로드 완료")
         
         # 초기 성과 측정
         self.baseline_performance = self._evaluate_model()
-        print(f"🎯 베이스라인 성과: {self.baseline_performance['accuracy']:.3f}")
+        self.logger.info(f"🎯 베이스라인 성과: {self.baseline_performance['accuracy']:.3f}")
         
         # 데이터베이스 연결
         self.db = get_database_manager()
@@ -305,7 +330,7 @@ class ReinforcementLearningOptimizer:
     def _get_test_data_from_ai_engine(self, ai_engine) -> Tuple[List[str], List[int]]:
         """AI 엔진으로부터 실제 사용자 피드백 데이터 수집"""
         try:
-            print("📊 실제 사용자 피드백 데이터 수집 중...")
+            self.logger.info("📊 실제 사용자 피드백 데이터 수집 중...")
             
             # 데이터베이스에서 실제 피드백 데이터 가져오기
             db = get_database_manager()
@@ -315,7 +340,7 @@ class ReinforcementLearningOptimizer:
             labels = []
             
             if feedback_data:
-                print(f"✅ {len(feedback_data)}개의 실제 피드백 발견")
+                self.logger.info(f"✅ {len(feedback_data)}개의 실제 피드백 발견")
                 
                 for feedback in feedback_data:
                     try:
@@ -345,14 +370,14 @@ class ReinforcementLearningOptimizer:
                         labels.append(label)
                         
                     except Exception as e:
-                        print(f"⚠️ 피드백 데이터 처리 실패: {e}")
+                        self.logger.warning(f"⚠️ 피드백 데이터 처리 실패: {e}")
                         continue
                         
-                print(f"📈 처리된 학습 데이터: {len(texts)}개 (긍정: {sum(labels)}, 부정: {len(labels)-sum(labels)})")
+                self.logger.info(f"📈 처리된 학습 데이터: {len(texts)}개 (긍정: {sum(labels)}, 부정: {len(labels)-sum(labels)})")
                 
             # 실제 피드백이 부족한 경우 최소한의 기본 케이스 추가
             if len(texts) < 10:
-                print("⚠️ 실제 피드백 데이터가 부족합니다. 기본 케이스 추가...")
+                self.logger.warning("⚠️ 실제 피드백 데이터가 부족합니다. 기본 케이스 추가...")
                 additional_cases = [
                     ('스타트업 펀딩 지원사업 공모', 1),
                     ('창업기업 육성 프로그램 모집', 1),
@@ -366,14 +391,14 @@ class ReinforcementLearningOptimizer:
                     texts.append(text)
                     labels.append(label)
                     
-                print(f"📝 기본 케이스 {len(additional_cases)}개 추가")
+                self.logger.info(f"📝 기본 케이스 {len(additional_cases)}개 추가")
                 
-            print(f"🎯 최종 학습 데이터: {len(texts)}개")
+            self.logger.info(f"🎯 최종 학습 데이터: {len(texts)}개")
             return texts, labels
             
         except Exception as e:
-            print(f"❌ 실제 피드백 데이터 수집 실패: {e}")
-            print("🔄 기본 테스트 케이스로 폴백...")
+            self.logger.error(f"❌ 실제 피드백 데이터 수집 실패: {e}")
+            self.logger.info("🔄 기본 테스트 케이스로 폴백...")
             
             # 폴백 케이스
             fallback_cases = [
@@ -395,11 +420,11 @@ class ReinforcementLearningOptimizer:
         try:
             # 실제 딥러닝 모델 로드 시도
             from .deep_learning_engine import get_deep_learning_engine
-            print("🧠 딥러닝 모델 로드 시도...")
+            self.logger.info("🧠 딥러닝 모델 로드 시도...")
             
             deep_engine = get_deep_learning_engine()
             if deep_engine and hasattr(deep_engine, 'predict'):
-                print("✅ 딥러닝 모델 로드 성공!")
+                self.logger.info("✅ 딥러닝 모델 로드 성공!")
                 
                 # 딥러닝 모델을 강화학습에 맞게 래핑
                 class DeepLearningWrapper:
@@ -418,17 +443,17 @@ class ReinforcementLearningOptimizer:
                                 score = self.engine.calculate_score(text)
                                 predictions.append(1 if score > 50 else 0)
                             except Exception as e:
-                                print(f"⚠️ 딥러닝 예측 오류: {e}")
+                                self.logger.warning(f"⚠️ 딥러닝 예측 오류: {e}")
                                 predictions.append(0)
                         return predictions
                 
                 return DeepLearningWrapper(deep_engine)
             else:
-                print("⚠️ 딥러닝 엔진이 없거나 예측 메서드가 없음")
+                self.logger.warning("⚠️ 딥러닝 엔진이 없거나 예측 메서드가 없음")
                 
         except Exception as e:
-            print(f"⚠️ 딥러닝 모델 로드 오류: {e}")
-            print("💡 더미 모델로 폴백...")
+            self.logger.warning(f"⚠️ 딥러닝 모델 로드 오류: {e}")
+            self.logger.info("💡 더미 모델로 폴백...")
             
         # 더미 모델 생성
         class DummyModel:
@@ -448,7 +473,7 @@ class ReinforcementLearningOptimizer:
                         predictions.append(0)
                 return predictions
         
-        print("🔄 더미 모델 생성 완료")
+        self.logger.info("🔄 더미 모델 생성 완료")
         return DummyModel()
     
     def _create_dummy_test_data(self) -> Tuple[List[str], List[int]]:
@@ -480,12 +505,12 @@ class ReinforcementLearningOptimizer:
                     else:
                         predictions.append(int(pred) if pred else 0)
                 except Exception as e:
-                    print(f"⚠️ 개별 텍스트 예측 실패: {e}")
+                    self.logger.warning(f"⚠️ 개별 텍스트 예측 실패: {e}")
                     predictions.append(0)
             
             # 길이 맞추기
             if len(predictions) != len(self.test_labels):
-                print(f"⚠️ 예측/라벨 길이 불일치: {len(predictions)} vs {len(self.test_labels)}")
+                self.logger.warning(f"⚠️ 예측/라벨 길이 불일치: {len(predictions)} vs {len(self.test_labels)}")
                 predictions = predictions[:len(self.test_labels)]
                 if len(predictions) < len(self.test_labels):
                     predictions.extend([0] * (len(self.test_labels) - len(predictions)))
@@ -502,13 +527,13 @@ class ReinforcementLearningOptimizer:
                 'f1': f1
             }
         except Exception as e:
-            print(f"⚠️ 평가 실패: {e}")
+            self.logger.error(f"⚠️ 평가 실패: {e}")
             return {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
     
     def optimize_threshold_rl(self, total_timesteps: int = 10000):
         """강화학습으로 임계값 최적화"""
-        print("\n🎯 강화학습 임계값 최적화 시작!")
-        print("-" * 40)
+        self.logger.info("\n🎯 강화학습 임계값 최적화 시작!")
+        self.logger.info("-" * 40)
         
         # 환경 생성
         env = StartupClassifierEnv(self.model, self.test_texts, self.test_labels, mode='threshold')
@@ -518,7 +543,7 @@ class ReinforcementLearningOptimizer:
         # PPO 에이전트 훈련
         model = PPO("MlpPolicy", env, verbose=1, learning_rate=0.001)
         
-        print("🧠 PPO 에이전트 훈련 중...")
+        self.logger.info("🧠 PPO 에이전트 훈련 중...")
         model.learn(total_timesteps=total_timesteps)
         
         # 최적 임계값 찾기
@@ -539,18 +564,18 @@ class ReinforcementLearningOptimizer:
         self.model.threshold = best_threshold
         optimized_performance = self._evaluate_model()
         
-        print(f"\n✅ 임계값 최적화 완료!")
-        print(f"   최적 임계값: {best_threshold:.3f}")
-        print(f"   개선 전: {self.baseline_performance['accuracy']:.3f}")
-        print(f"   개선 후: {optimized_performance['accuracy']:.3f}")
-        print(f"   향상도: +{optimized_performance['accuracy'] - self.baseline_performance['accuracy']:.3f}")
+        self.logger.info(f"\n✅ 임계값 최적화 완료!")
+        self.logger.info(f"   최적 임계값: {best_threshold:.3f}")
+        self.logger.info(f"   개선 전: {self.baseline_performance['accuracy']:.3f}")
+        self.logger.info(f"   개선 후: {optimized_performance['accuracy']:.3f}")
+        self.logger.info(f"   향상도: +{optimized_performance['accuracy'] - self.baseline_performance['accuracy']:.3f}")
         
         return best_threshold, optimized_performance
     
     def optimize_weights_rl(self, total_timesteps: int = 10000):
         """강화학습으로 모델 가중치 최적화"""
-        print("\n⚖️ 강화학습 가중치 최적화 시작!")
-        print("-" * 40)
+        self.logger.info("\n⚖️ 강화학습 가중치 최적화 시작!")
+        self.logger.info("-" * 40)
         
         # 환경 생성
         env = StartupClassifierEnv(self.model, self.test_texts, self.test_labels, mode='weights')
@@ -560,7 +585,7 @@ class ReinforcementLearningOptimizer:
         # A2C 에이전트 훈련 (연속적 액션에 적합)
         model = A2C("MlpPolicy", env, verbose=1, learning_rate=0.001)
         
-        print("🧠 A2C 에이전트 훈련 중...")
+        self.logger.info("🧠 A2C 에이전트 훈련 중...")
         model.learn(total_timesteps=total_timesteps)
         
         # 최적 가중치 찾기
@@ -581,18 +606,18 @@ class ReinforcementLearningOptimizer:
         self.model.model_weights = best_weights
         optimized_performance = self._evaluate_model()
         
-        print(f"\n✅ 가중치 최적화 완료!")
-        print(f"   최적 가중치: {best_weights}")
-        print(f"   개선 전: {self.baseline_performance['accuracy']:.3f}")
-        print(f"   개선 후: {optimized_performance['accuracy']:.3f}")
-        print(f"   향상도: +{optimized_performance['accuracy'] - self.baseline_performance['accuracy']:.3f}")
+        self.logger.info(f"\n✅ 가중치 최적화 완료!")
+        self.logger.info(f"   최적 가중치: {best_weights}")
+        self.logger.info(f"   개선 전: {self.baseline_performance['accuracy']:.3f}")
+        self.logger.info(f"   개선 후: {optimized_performance['accuracy']:.3f}")
+        self.logger.info(f"   향상도: +{optimized_performance['accuracy'] - self.baseline_performance['accuracy']:.3f}")
         
         return best_weights, optimized_performance
     
     def hyperparameter_search_optuna(self, n_trials: int = 100):
         """Optuna를 사용한 하이퍼파라미터 최적화"""
-        print("\n🔍 Optuna 하이퍼파라미터 최적화!")
-        print("-" * 40)
+        self.logger.info("\n🔍 Optuna 하이퍼파라미터 최적화!")
+        self.logger.info("-" * 40)
         
         def objective(trial):
             # 임계값과 가중치 동시 최적화
@@ -639,25 +664,25 @@ class ReinforcementLearningOptimizer:
         
         final_performance = self._evaluate_model()
         
-        print(f"\n✅ Optuna 최적화 완료!")
-        print(f"   최적 임계값: {best_params['threshold']:.3f}")
-        print(f"   최적 점수: {study.best_value:.3f}")
-        print(f"   최종 정확도: {final_performance['accuracy']:.3f}")
+        self.logger.info(f"\n✅ Optuna 최적화 완료!")
+        self.logger.info(f"   최적 임계값: {best_params['threshold']:.3f}")
+        self.logger.info(f"   최적 점수: {study.best_value:.3f}")
+        self.logger.info(f"   최종 정확도: {final_performance['accuracy']:.3f}")
         
         return best_params, final_performance
     
     def detailed_analysis(self):
         """상세 분석 및 문제 케이스 재검토"""
-        print("\n🔍 상세 분석 시작!")
-        print("="*50)
+        self.logger.info("\n🔍 상세 분석 시작!")
+        self.logger.info("="*50)
         
         # 현재 성과
         current_performance = self._evaluate_model()
         predictions = self.model.predict(self.test_texts)
         
-        print("📊 전체 성과:")
+        self.logger.info("📊 전체 성과:")
         for metric, value in current_performance.items():
-            print(f"   {metric}: {value:.3f}")
+            self.logger.info(f"   {metric}: {value:.3f}")
         
         # 문제 케이스 분석
         problem_cases = []
@@ -670,16 +695,16 @@ class ReinforcementLearningOptimizer:
                     'type': 'FN' if true_label == 1 and pred == 0 else 'FP'
                 })
         
-        print(f"\n❌ 문제 케이스 {len(problem_cases)}개:")
+        self.logger.info(f"\n❌ 문제 케이스 {len(problem_cases)}개:")
         for i, case in enumerate(problem_cases):
-            print(f"   {i+1}. [{case['type']}] {case['text'][:50]}...")
-            print(f"      실제: {case['true_label']} | 예측: {case['predicted']}")
+            self.logger.info(f"   {i+1}. [{case['type']}] {case['text'][:50]}...")
+            self.logger.info(f"      실제: {case['true_label']} | 예측: {case['predicted']}")
         
         return current_performance, problem_cases
     
     def save_optimized_model(self, filename: str = 'rl_optimized_model.pkl'):
         """최적화된 모델 저장"""
-        print(f"\n💾 최적화된 모델 저장: {filename}")
+        self.logger.info(f"\n💾 최적화된 모델 저장: {filename}")
         
         with open(filename, 'wb') as f:
             pickle.dump(self.model, f)
@@ -697,13 +722,13 @@ class ReinforcementLearningOptimizer:
         with open(f'rl_optimization_results.json', 'w', encoding='utf-8') as f:
             json.dump(metadata, f, ensure_ascii=False, indent=2)
         
-        print("✅ 저장 완료!")
+        self.logger.info("✅ 저장 완료!")
 
     def optimize_from_feedback(self, feedback_data: List[Dict]) -> Dict[str, Any]:
         """피드백 데이터를 기반으로 실시간 최적화"""
         try:
-            print(f"\n🎯 피드백 기반 강화학습 시작: {len(feedback_data)}개 데이터")
-            print("-" * 50)
+            self.logger.info(f"\n🎯 피드백 기반 강화학습 시작: {len(feedback_data)}개 데이터")
+            self.logger.info("-" * 50)
             
             # 피드백 데이터를 학습 데이터로 변환
             texts, labels = self._convert_feedback_to_training_data(feedback_data)
@@ -723,13 +748,13 @@ class ReinforcementLearningOptimizer:
             original_performance = self._evaluate_model()
             
             # 임계값 최적화 (작은 스케일)
-            print("🎯 피드백 기반 임계값 최적화...")
+            self.logger.info("🎯 피드백 기반 임계값 최적화...")
             optimized_threshold, threshold_performance = self._optimize_threshold_from_feedback(
                 combined_texts, combined_labels
             )
             
             # 가중치 최적화 (작은 스케일)
-            print("⚖️ 피드백 기반 가중치 최적화...")
+            self.logger.info("⚖️ 피드백 기반 가중치 최적화...")
             optimized_weights, weights_performance = self._optimize_weights_from_feedback(
                 combined_texts, combined_labels
             )
@@ -755,23 +780,23 @@ class ReinforcementLearningOptimizer:
                 'timestamp': datetime.now().isoformat()
             }
             
-            print(f"✅ 피드백 기반 최적화 완료!")
-            print(f"   정확도 향상: {optimization_result['improvement']['accuracy_gain']:.3f}")
-            print(f"   F1 스코어 향상: {optimization_result['improvement']['f1_gain']:.3f}")
+            self.logger.info(f"✅ 피드백 기반 최적화 완료!")
+            self.logger.info(f"   정확도 향상: {optimization_result['improvement']['accuracy_gain']:.3f}")
+            self.logger.info(f"   F1 스코어 향상: {optimization_result['improvement']['f1_gain']:.3f}")
             
             # 성능이 향상된 경우에만 적용
             if optimization_result['improvement']['accuracy_gain'] > 0:
                 self.model.threshold = optimized_threshold
                 if hasattr(self.model, 'model_weights'):
                     self.model.model_weights = optimized_weights
-                print("🎉 최적화된 설정 적용 완료!")
+                self.logger.info("🎉 최적화된 설정 적용 완료!")
             else:
-                print("⚠️ 성능 향상이 없어 기존 설정 유지")
+                self.logger.warning("⚠️ 성능 향상이 없어 기존 설정 유지")
             
             return optimization_result
             
         except Exception as e:
-            print(f"❌ 피드백 기반 최적화 실패: {e}")
+            self.logger.error(f"❌ 피드백 기반 최적화 실패: {e}")
             return {
                 'status': 'error',
                 'message': str(e),
@@ -806,10 +831,10 @@ class ReinforcementLearningOptimizer:
                 labels.append(label)
                 
             except Exception as e:
-                print(f"⚠️ 피드백 데이터 변환 실패: {e}")
+                self.logger.warning(f"⚠️ 피드백 데이터 변환 실패: {e}")
                 continue
         
-        print(f"📊 피드백 데이터 변환 완료: {len(texts)}개 (Keep: {sum(labels)}, Delete: {len(labels)-sum(labels)})")
+        self.logger.info(f"📊 피드백 데이터 변환 완료: {len(texts)}개 (Keep: {sum(labels)}, Delete: {len(labels)-sum(labels)})")
         return texts, labels
     
     def _optimize_threshold_from_feedback(self, texts: List[str], labels: List[int]) -> Tuple[float, Dict[str, float]]:
@@ -846,7 +871,7 @@ class ReinforcementLearningOptimizer:
             return best_threshold, best_performance
             
         except Exception as e:
-            print(f"⚠️ 임계값 최적화 실패: {e}")
+            self.logger.warning(f"⚠️ 임계값 최적화 실패: {e}")
             return 0.5, {'accuracy': 0, 'precision': 0, 'recall': 0, 'f1': 0}
     
     def _optimize_weights_from_feedback(self, texts: List[str], labels: List[int]) -> Tuple[Dict[str, float], Dict[str, float]]:
@@ -889,7 +914,7 @@ class ReinforcementLearningOptimizer:
             return best_weights, best_performance
             
         except Exception as e:
-            print(f"⚠️ 가중치 최적화 실패: {e}")
+            self.logger.warning(f"⚠️ 가중치 최적화 실패: {e}")
             default_weights = {'model1': 1.0, 'model2': 1.0, 'model3': 1.0}
             performance = self._evaluate_model_on_data(texts, labels)
             return default_weights, performance
@@ -906,7 +931,7 @@ class ReinforcementLearningOptimizer:
                 'f1': f1_score(labels, predictions, zero_division=0)
             }
         except Exception as e:
-            print(f"⚠️ 성능 평가 실패: {e}")
+            self.logger.warning(f"⚠️ 성능 평가 실패: {e}")
             return {'accuracy': 0, 'precision': 0, 'recall': 0, 'f1': 0}
     
     def get_rl_optimization_status(self) -> Dict[str, Any]:
@@ -942,8 +967,8 @@ class ReinforcementLearningOptimizer:
     def retrain_deep_learning_model(self, feedback_data: List[Dict]) -> Dict[str, Any]:
         """실제 딥러닝 모델 재훈련 - pkl 모델이 진짜로 똑똑해짐!"""
         try:
-            print("\n🧠 실제 딥러닝 모델 재훈련 시작!")
-            print("="*50)
+            self.logger.info("\n🧠 실제 딥러닝 모델 재훈련 시작!")
+            self.logger.info("="*50)
             
             # 피드백 데이터를 학습 데이터로 변환
             texts, labels = self._convert_feedback_to_training_data(feedback_data)
@@ -955,83 +980,96 @@ class ReinforcementLearningOptimizer:
                     'data_count': len(texts)
                 }
             
-            print(f"📚 학습 데이터: {len(texts)}개 (긍정: {sum(labels)}, 부정: {len(labels)-sum(labels)})")
+            self.logger.info(f"📚 학습 데이터: {len(texts)}개 (긍정: {sum(labels)}, 부정: {len(labels)-sum(labels)})")
             
-            # 딥러닝 모델이 있는지 확인
-            if hasattr(self.model, 'engine') and hasattr(self.model.engine, 'model'):
-                deep_model = self.model.engine.model
-                feature_extractor = self.model.engine.feature_extractor
+            # AIEngine에서 딥러닝 모델 찾기
+            deep_model = None
+            feature_extractor = None
+            
+            # AIEngine의 model_manager에서 딥러닝 모델 찾기
+            if hasattr(self.model, 'model_manager') and hasattr(self.model.model_manager, 'deep_learning_model'):
+                deep_learning_engine = self.model.model_manager.deep_learning_model
+                if deep_learning_engine and hasattr(deep_learning_engine, 'model') and hasattr(deep_learning_engine, 'feature_extractor'):
+                    deep_model = deep_learning_engine.model
+                    feature_extractor = deep_learning_engine.feature_extractor
+                    self.logger.info("✅ AIEngine에서 딥러닝 모델 발견")
+            
+            # 직접 딥러닝 엔진에서 찾기 (백업)
+            if deep_model is None:
+                try:
+                    from .deep_learning_engine import get_deep_learning_engine
+                    deep_learning_engine = get_deep_learning_engine()
+                    if deep_learning_engine and hasattr(deep_learning_engine, 'model') and hasattr(deep_learning_engine, 'feature_extractor'):
+                        deep_model = deep_learning_engine.model
+                        feature_extractor = deep_learning_engine.feature_extractor
+                        self.logger.info("✅ 직접 딥러닝 엔진에서 모델 발견")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ 직접 딥러닝 엔진 로드 실패: {e}")
+            
+            if deep_model is None or feature_extractor is None:
+                self.logger.warning("⚠️ 딥러닝 모델 또는 특성 추출기를 찾을 수 없음")
+                return {'status': 'no_model', 'message': '딥러닝 모델을 찾을 수 없습니다.'}
+            
+            self.logger.info("✅ 딥러닝 모델 발견 - 실제 재훈련 시작")
+            
+            # 성능 평가 전
+            before_performance = self._evaluate_model()
+            self.logger.info(f"🎯 재훈련 전 성능: 정확도 {before_performance['accuracy']:.3f}")
+            
+            # 실제 모델 재훈련 실행
+            retrain_result = self._perform_actual_retraining(
+                deep_model, feature_extractor, texts, labels
+            )
+            
+            if retrain_result['success']:
+                # 성능 평가 후
+                after_performance = self._evaluate_model()
+                self.logger.info(f"🎉 재훈련 후 성능: 정확도 {after_performance['accuracy']:.3f}")
                 
-                if deep_model is None or feature_extractor is None:
-                    print("⚠️ 딥러닝 모델 또는 특성 추출기가 없음")
-                    return {'status': 'no_model', 'message': '딥러닝 모델을 찾을 수 없습니다.'}
+                improvement = after_performance['accuracy'] - before_performance['accuracy']
+                self.logger.info(f"📈 성능 향상: {improvement:+.3f}")
                 
-                print("✅ 딥러닝 모델 발견 - 실제 재훈련 시작")
+                # 향상된 모델 저장
+                self._save_improved_model()
                 
-                # 성능 평가 전
-                before_performance = self._evaluate_model()
-                print(f"🎯 재훈련 전 성능: 정확도 {before_performance['accuracy']:.3f}")
+                # 데이터베이스에 학습 이벤트 기록
+                try:
+                    if hasattr(self, 'ai_engine') and self.ai_engine and hasattr(self.ai_engine, 'db_manager'):
+                        self.ai_engine.db_manager.record_learning_event(
+                            learning_type='deep_learning_retrain',
+                            performance_before=before_performance,
+                            performance_after=after_performance,
+                            details={
+                                'training_samples': len(texts),
+                                'epochs_trained': retrain_result.get('epochs', 0),
+                                'final_loss': retrain_result.get('final_loss', 0),
+                                'improvement': improvement
+                            }
+                        )
+                        self.logger.info(f"📊 DB에 학습 통계 업데이트 완료")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ DB 통계 업데이트 실패: {e}")
                 
-                # 실제 모델 재훈련 실행
-                retrain_result = self._perform_actual_retraining(
-                    deep_model, feature_extractor, texts, labels
-                )
-                
-                if retrain_result['success']:
-                    # 성능 평가 후
-                    after_performance = self._evaluate_model()
-                    print(f"🎉 재훈련 후 성능: 정확도 {after_performance['accuracy']:.3f}")
-                    
-                    improvement = after_performance['accuracy'] - before_performance['accuracy']
-                    print(f"📈 성능 향상: {improvement:+.3f}")
-                    
-                    # 향상된 모델 저장
-                    self._save_improved_model()
-                    
-                    # 데이터베이스에 학습 이벤트 기록
-                    try:
-                        if hasattr(self, 'ai_engine') and self.ai_engine and hasattr(self.ai_engine, 'db_manager'):
-                            self.ai_engine.db_manager.record_learning_event(
-                                learning_type='deep_learning_retrain',
-                                performance_before=before_performance,
-                                performance_after=after_performance,
-                                details={
-                                    'training_samples': len(texts),
-                                    'epochs_trained': retrain_result.get('epochs', 0),
-                                    'final_loss': retrain_result.get('final_loss', 0),
-                                    'improvement': improvement
-                                }
-                            )
-                            print(f"📊 DB에 학습 통계 업데이트 완료")
-                    except Exception as e:
-                        print(f"⚠️ DB 통계 업데이트 실패: {e}")
-                    
-                    return {
-                        'status': 'success',
-                        'message': '딥러닝 모델 재훈련 완료!',
-                        'before_performance': before_performance,
-                        'after_performance': after_performance,
-                        'improvement': improvement,
-                        'training_samples': len(texts),
-                        'epochs_trained': retrain_result.get('epochs', 0),
-                        'final_loss': retrain_result.get('final_loss', 0),
-                        'timestamp': datetime.now().isoformat()
-                    }
-                else:
-                    return {
-                        'status': 'training_failed',
-                        'message': retrain_result.get('error', '재훈련 중 오류 발생'),
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    
+                return {
+                    'status': 'success',
+                    'message': '딥러닝 모델 재훈련 완료!',
+                    'before_performance': before_performance,
+                    'after_performance': after_performance,
+                    'improvement': improvement,
+                    'training_samples': len(texts),
+                    'epochs_trained': retrain_result.get('epochs', 0),
+                    'final_loss': retrain_result.get('final_loss', 0),
+                    'timestamp': datetime.now().isoformat()
+                }
             else:
-                print("⚠️ 딥러닝 모델 래퍼가 없음 - 임계값 최적화로 대체")
-                # 딥러닝 모델이 없는 경우 임계값 최적화
-                optimization_result = self.optimize_from_feedback(feedback_data)
-                return optimization_result
+                return {
+                    'status': 'training_failed',
+                    'message': retrain_result.get('error', '재훈련 중 오류 발생'),
+                    'timestamp': datetime.now().isoformat()
+                }
                 
         except Exception as e:
-            print(f"❌ 딥러닝 모델 재훈련 실패: {e}")
+            self.logger.error(f"❌ 딥러닝 모델 재훈련 실패: {e}")
             return {
                 'status': 'error',
                 'message': str(e),
@@ -1046,21 +1084,23 @@ class ReinforcementLearningOptimizer:
             import torch.optim as optim
             from torch.utils.data import DataLoader, TensorDataset
             
-            print("🔥 PyTorch 재훈련 시작...")
+            self.logger.info("🔥 PyTorch 재훈련 시작...")
             
-            # 디바이스 설정
-            device = getattr(self.model.engine, 'device', torch.device('cpu'))
-            print(f"🖥️ 학습 디바이스: {device}")
+            # 디바이스 설정 - Config에서 올바른 디바이스 가져오기
+            from .config import Config
+            device = Config.DEVICE  # MPS, CUDA, 또는 CPU 자동 선택
+            
+            self.logger.info(f"🖥️ 학습 디바이스: {device} ({Config.DEVICE_NAME})")
             
             # 특성 추출
-            print("🔧 텍스트 특성 추출 중...")
+            self.logger.info("🔧 텍스트 특성 추출 중...")
             features = feature_extractor.extract_features(texts, is_training=True)
             
             # PyTorch 텐서로 변환
             X_tensor = torch.FloatTensor(features).to(device)
             y_tensor = torch.FloatTensor(labels).to(device)
             
-            print(f"📊 학습 데이터 형태: {X_tensor.shape}")
+            self.logger.info(f"📊 학습 데이터 형태: {X_tensor.shape}")
             
             # 데이터 로더 생성
             dataset = TensorDataset(X_tensor, y_tensor)
@@ -1075,7 +1115,7 @@ class ReinforcementLearningOptimizer:
             
             # 학습 실행
             num_epochs = min(10, max(3, len(texts) // 2))  # 데이터 양에 따라 조정
-            print(f"📚 {num_epochs} 에포크 동안 파인튜닝...")
+            self.logger.info(f"📚 {num_epochs} 에포크 동안 파인튜닝...")
             
             total_loss = 0
             for epoch in range(num_epochs):
@@ -1095,14 +1135,14 @@ class ReinforcementLearningOptimizer:
                 
                 avg_epoch_loss = epoch_loss / len(dataloader)
                 total_loss += avg_epoch_loss
-                print(f"   에포크 {epoch+1}/{num_epochs}: Loss = {avg_epoch_loss:.4f}")
+                self.logger.info(f"   에포크 {epoch+1}/{num_epochs}: Loss = {avg_epoch_loss:.4f}")
             
             final_loss = total_loss / num_epochs
             
             # 모델을 평가 모드로 전환
             model.eval()
             
-            print(f"✅ 재훈련 완료! 평균 Loss: {final_loss:.4f}")
+            self.logger.info(f"✅ 재훈련 완료! 평균 Loss: {final_loss:.4f}")
             
             return {
                 'success': True,
@@ -1112,7 +1152,7 @@ class ReinforcementLearningOptimizer:
             }
             
         except Exception as e:
-            print(f"❌ 실제 재훈련 실패: {e}")
+            self.logger.error(f"❌ 실제 재훈련 실패: {e}")
             return {
                 'success': False,
                 'error': str(e)
@@ -1128,11 +1168,25 @@ class ReinforcementLearningOptimizer:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = f"models/rl_improved_model_{timestamp}.pkl"
             
-            print(f"💾 향상된 모델 저장 중: {backup_path}")
+            self.logger.info(f"💾 향상된 모델 저장 중: {backup_path}")
             
-            # 모델 전체를 저장
+            # AIEngine의 model_manager에서 딥러닝 엔진 찾기
+            deep_learning_engine = None
+            if hasattr(self.model, 'model_manager') and hasattr(self.model.model_manager, 'deep_learning_model'):
+                deep_learning_engine = self.model.model_manager.deep_learning_model
+            
+            # 직접 딥러닝 엔진에서 찾기 (백업)
+            if deep_learning_engine is None:
+                try:
+                    from .deep_learning_engine import get_deep_learning_engine
+                    deep_learning_engine = get_deep_learning_engine()
+                except Exception as e:
+                    self.logger.warning(f"⚠️ 딥러닝 엔진 찾기 실패: {e}")
+                    deep_learning_engine = self.model  # AIEngine 자체를 저장
+            
+            # 모델 저장
             with open(backup_path, 'wb') as f:
-                pickle.dump(self.model.engine, f)
+                pickle.dump(deep_learning_engine, f)
             
             # 메타데이터 저장
             metadata = {
@@ -1149,17 +1203,18 @@ class ReinforcementLearningOptimizer:
                 import json
                 json.dump(metadata, f, ensure_ascii=False, indent=2)
             
-            print(f"✅ 모델 저장 완료: {backup_path}")
-            print(f"📋 메타데이터 저장: {metadata_path}")
+            self.logger.info(f"✅ 모델 저장 완료: {backup_path}")
+            self.logger.info(f"📋 메타데이터 저장: {metadata_path}")
             
         except Exception as e:
-            print(f"⚠️ 모델 저장 실패: {e}")
+            self.logger.warning(f"⚠️ 모델 저장 실패: {e}")
 
 
 def main():
     """메인 실행 함수"""
-    print("🚀 스타트업 모니터링 시스템 - 강화학습 최적화")
-    print("="*60)
+    logger = get_logger(__name__)
+    logger.info("🚀 스타트업 모니터링 시스템 - 강화학습 최적화")
+    logger.info("="*60)
     
     # 파일 경로 설정 (코랩에서 다운로드한 파일들)
     model_path = 'improved_ensemble_model.pkl'  # 또는 다른 모델
@@ -1167,43 +1222,43 @@ def main():
     
     # 파일 존재 확인
     if not os.path.exists(model_path):
-        print(f"❌ 모델 파일을 찾을 수 없습니다: {model_path}")
-        print("💡 코랩에서 14-15단계를 실행하여 파일을 다운로드하세요!")
+        logger.error(f"❌ 모델 파일을 찾을 수 없습니다: {model_path}")
+        logger.info("💡 코랩에서 14-15단계를 실행하여 파일을 다운로드하세요!")
         return
     
     if not os.path.exists(test_data_path):
-        print(f"❌ 테스트 데이터를 찾을 수 없습니다: {test_data_path}")
+        logger.error(f"❌ 테스트 데이터를 찾을 수 없습니다: {test_data_path}")
         return
     
     # 최적화 시스템 초기화
     optimizer = ReinforcementLearningOptimizer(model_path, test_data_path)
     
     # 1. 베이스라인 분석
-    print("\n" + "="*60)
+    logger.info("\n" + "="*60)
     optimizer.detailed_analysis()
     
     # 2. Optuna 최적화 (빠르고 효과적)
-    print("\n" + "="*60)
+    logger.info("\n" + "="*60)
     best_params, performance = optimizer.hyperparameter_search_optuna(n_trials=50)
     
     # 3. 강화학습 임계값 최적화
-    print("\n" + "="*60)
+    logger.info("\n" + "="*60)
     threshold, threshold_performance = optimizer.optimize_threshold_rl(total_timesteps=5000)
     
     # 4. 강화학습 가중치 최적화  
-    print("\n" + "="*60)
+    logger.info("\n" + "="*60)
     weights, weights_performance = optimizer.optimize_weights_rl(total_timesteps=5000)
     
     # 5. 최종 분석
-    print("\n" + "="*60)
+    logger.info("\n" + "="*60)
     final_performance, final_problems = optimizer.detailed_analysis()
     
     # 6. 최적화된 모델 저장
     optimizer.save_optimized_model()
     
-    print(f"\n🎉 강화학습 최적화 완료!")
-    print(f"   최종 정확도: {final_performance['accuracy']:.3f}")
-    print(f"   남은 문제 케이스: {len(final_problems)}개")
+    logger.info(f"\n🎉 강화학습 최적화 완료!")
+    logger.info(f"   최종 정확도: {final_performance['accuracy']:.3f}")
+    logger.info(f"   남은 문제 케이스: {len(final_problems)}개")
 
 
 if __name__ == "__main__":

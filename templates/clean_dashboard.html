@@ -6,34 +6,7 @@
     <title>AI 지원사업 모니터링 대시보드</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body { background-color: #f8f9fa; }
-        .stat-card { 
-            border-radius: 15px; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-            transition: transform 0.2s;
-        }
-        .stat-card:hover { transform: translateY(-2px); }
-        .table-container { 
-            background: white; 
-            border-radius: 10px; 
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
-        }
-        .refresh-indicator {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-        }
-        .pulse {
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
-        }
-    </style>
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
 </head>
 <body>
     <!-- 실시간 업데이트 알림 -->
@@ -206,119 +179,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
     <script>
-        // HTML data 속성에서 초기값 읽기
-        const container = document.querySelector('.container[data-recent-count]');
-        let currentProgramCount = parseInt(container.dataset.recentCount) || 0;
-        let lastUpdateTime = container.dataset.lastUpdate || "";
-        
-        // 실시간 데이터 상태 확인
-        function checkDataStatus() {
-            fetch('/api/data_status')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const newCount = data.total_programs;
-                    
-                    // 새로운 데이터가 추가되었는지 확인
-                    if (newCount > currentProgramCount) {
-                        console.log(`🆕 새로운 지원사업 발견: ${newCount - currentProgramCount}개`);
-                        showRefreshIndicator();
-                        updateStats(data);
-                        currentProgramCount = newCount;
-                    }
-                    
-                    // 상태 업데이트
-                    document.getElementById('dataStatus').textContent = '실시간 모니터링';
-                    document.getElementById('dataStatus').className = 'badge bg-success ms-2';
-                }
-            })
-            .catch(error => {
-                console.error('데이터 상태 확인 실패:', error);
-                document.getElementById('dataStatus').textContent = '연결 오류';
-                document.getElementById('dataStatus').className = 'badge bg-danger ms-2';
-            });
-        }
-        
-        // 새로고침 알림 표시
-        function showRefreshIndicator() {
-            const indicator = document.getElementById('refreshIndicator');
-            indicator.style.display = 'block';
-            indicator.classList.add('pulse');
-        }
-        
-        // 통계 업데이트
-        function updateStats(data) {
-            document.getElementById('totalPrograms').textContent = data.total_programs;
-            document.getElementById('activePrograms').textContent = data.total_programs;
-            document.getElementById('recentCount').textContent = Math.min(10, data.total_programs);
-            
-            // 카드에 새로운 데이터 애니메이션 추가
-            const cards = document.querySelectorAll('.stat-card');
-            cards.forEach(card => {
-                card.classList.add('pulse');
-                setTimeout(() => card.classList.remove('pulse'), 2000);
-            });
-        }
-        
-        // 수동 새로고침
-        function manualRefresh() {
-            const btn = document.getElementById('refreshBtn');
-            const originalHtml = btn.innerHTML;
-            
-            btn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> 새로고침 중...';
-            btn.disabled = true;
-            
-            fetch('/api/refresh_data', { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    setTimeout(() => location.reload(), 500);
-                } else {
-                    alert('새로고침 실패: ' + data.error);
-                }
-            })
-            .catch(error => {
-                console.error('새로고침 실패:', error);
-                alert('새로고침 중 오류가 발생했습니다.');
-            })
-            .finally(() => {
-                btn.innerHTML = originalHtml;
-                btn.disabled = false;
-            });
-        }
-        
-        // 30초마다 데이터 상태 확인
-        setInterval(checkDataStatus, 30000);
-        
-        // 페이지 로드 시 즉시 확인
-        setTimeout(checkDataStatus, 2000);
-
-        function deleteProgram(programId) {
-            if (confirm('이 프로그램을 AI 학습 데이터로 사용하시겠습니까?')) {
-                fetch(`/api/delete/${programId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        document.getElementById(`row-${programId}`).style.display = 'none';
-                        alert(data.message || 'AI가 학습했습니다.');
-                        // 프로그램 수 업데이트
-                        currentProgramCount--;
-                        document.getElementById('recentCount').textContent = Math.max(0, currentProgramCount);
-                    } else {
-                        alert('AI 학습 실패: ' + (data.error || '알 수 없는 오류'));
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('AI 학습 중 오류가 발생했습니다.');
-                });
-            }
-        }
-
         function startSearch() {
             const searchBtn = document.getElementById('searchBtn');
             const searchProgress = document.getElementById('searchProgress');

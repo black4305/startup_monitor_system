@@ -573,8 +573,8 @@ class DatabaseManager:
                 result = self.supabase.table('learning_patterns')\
                     .update({
                         'frequency': new_frequency,
-                        'last_reason': reason,
-                        'updated_at': datetime.now().isoformat()
+                        'reason': reason,
+                        'last_updated': datetime.now().isoformat()
                     })\
                     .eq('id', existing.data[0]['id'])\
                     .execute()
@@ -585,7 +585,7 @@ class DatabaseManager:
                     'category': category, 
                     'pattern_key': pattern_key,
                     'frequency': frequency_increment,
-                    'last_reason': reason
+                    'reason': reason
                 }
                 result = self.supabase.table('learning_patterns').insert(data).execute()
             

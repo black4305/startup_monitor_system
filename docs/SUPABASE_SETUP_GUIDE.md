@@ -554,38 +554,109 @@ VALUES (0, 0, 0, 0);
 
 ---
 
-## ✅ 9단계: 설정 확인
+## 🔧 4단계: 데이터베이스 마이그레이션 (필요시)
 
-### 9.1 연결 테스트
-Python에서 연결 확인:
+### 4.1 learning_patterns 테이블 컬럼 수정
+만약 기존 데이터베이스에서 `last_reason` 컬럼을 사용하고 있다면, 다음 SQL을 실행하여 `reason` 컬럼으로 통일하세요:
 
-```python
-from supabase import create_client, Client
+```sql
+-- 기존 last_reason 컬럼이 있다면 제거
+ALTER TABLE learning_patterns DROP COLUMN IF EXISTS last_reason;
 
-# 연결 테스트
-def test_supabase_connection():
-    try:
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        
-        # 간단한 쿼리 테스트
-        result = supabase.table('system_settings').select('*').limit(1).execute()
-        
-        if result.data:
-            print("✅ Supabase 연결 성공!")
-            return True
-        else:
-            print("❌ 데이터 조회 실패")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Supabase 연결 실패: {e}")
-        return False
+-- reason 컬럼이 없다면 추가 (이미 있다면 무시됨)
+ALTER TABLE learning_patterns ADD COLUMN IF NOT EXISTS reason TEXT;
 
-# 테스트 실행
-test_supabase_connection()
+-- last_updated 컬럼이 없다면 추가 (이미 있다면 무시됨)
+ALTER TABLE learning_patterns ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+```
+
+### 4.2 기존 데이터 마이그레이션 (필요시)
+만약 기존에 `last_reason` 컬럼에 데이터가 있었다면:
+
+```sql
+-- last_reason 데이터를 reason으로 복사 (last_reason 컬럼이 존재하는 경우)
+UPDATE learning_patterns 
+SET reason = last_reason 
+WHERE last_reason IS NOT NULL AND reason IS NULL;
+
+-- last_reason 컬럼 제거
+ALTER TABLE learning_patterns DROP COLUMN IF EXISTS last_reason;
 ```
 
 ---
+
+## 📋 5단계: 설정 확인
+
+### 5.1 테이블 구조 확인
+모든 테이블이 올바르게 생성되었는지 확인:
+
+```sql
+-- 테이블 목록 확인
+SELECT table_name FROM information_schema.tables 
+WHERE table_schema = 'public' 
+ORDER BY table_name;
+
+-- learning_patterns 테이블 구조 확인
+\d learning_patterns
+```
+
+### 5.2 RLS 정책 확인
+```sql
+-- RLS 정책 목록 확인
+SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual 
+FROM pg_policies 
+WHERE schemaname = 'public';
+```
+
+---
+
+## 🚀 6단계: 애플리케이션 실행
+
+이제 애플리케이션을 실행할 수 있습니다:
+
+```bash
+# 가상환경 활성화 (필요시)
+source venv/bin/activate
+
+# 의존성 설치
+pip install -r requirements.txt
+
+# 애플리케이션 실행
+python run.py
+```
+
+---
+
+## 🔍 7단계: 문제 해결
+
+### 7.1 일반적인 오류들
+
+**오류: "Could not find the 'last_reason' column"**
+- 해결: 위의 마이그레이션 SQL을 실행하세요.
+
+**오류: "RLS policy violation"**
+- 해결: RLS 정책이 올바르게 설정되었는지 확인하세요.
+
+**오류: "Connection failed"**
+- 해결: Supabase URL과 API 키가 올바른지 확인하세요.
+
+### 7.2 로그 확인
+```sql
+-- 최근 시스템 로그 확인
+SELECT * FROM system_logs 
+ORDER BY created_at DESC 
+LIMIT 10;
+```
+
+---
+
+## 📞 지원
+
+문제가 발생하면 다음을 확인하세요:
+1. Supabase 대시보드에서 테이블 구조 확인
+2. 애플리케이션 로그 확인
+3. RLS 정책 설정 확인
+4. API 키 권한 확인
 
 ## 🎯 완료 체크리스트
 

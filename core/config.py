@@ -91,7 +91,7 @@ class Config:
     MAX_SITES_TO_PROCESS = None  # GPU 사용 시 제한 없음
     MAX_PROGRAMS_PER_SITE = 50  # 더 많은 프로그램 수집
     MAX_RESULTS_TO_KEEP = 200
-    MIN_SCORE_THRESHOLD = 55   # 실제 운영용 점수 임계값 (균형 조정)
+    MIN_SCORE_THRESHOLD = 30   # 강화학습 최적화된 임계값 (0.3 * 100)
     
     # 사용자 프로필 기본값
     DEFAULT_USER_PROFILE = {

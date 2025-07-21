@@ -7,6 +7,10 @@ import logging
 import threading
 import traceback
 from datetime import datetime
+from .api_utils import (
+    success_response, error_response, paginated_response,
+    not_found_response, validation_error_response, internal_server_error_response
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,36 +80,34 @@ def create_routes(program_service, dashboard_service, ai_service):
         """데이터 상태 API"""
         try:
             programs = program_service.get_programs()
-            return jsonify({
-                'success': True,
+            return success_response(data={
                 'total_programs': len(programs),
                 'last_updated': datetime.now().isoformat(),
                 'cache_valid': program_service._is_cache_valid()
             })
         except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/refresh_data', methods=['POST'])
     def refresh_data():
         """데이터 새로고침 API"""
         try:
             programs = program_service.refresh_cache()
-            return jsonify({
-                'success': True,
-                'message': f'데이터 새로고침 완료: {len(programs)}개',
-                'total_programs': len(programs)
-            })
+            return success_response(
+                data={'total_programs': len(programs)},
+                message=f'데이터 새로고침 완료: {len(programs)}개'
+            )
         except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/learning_status')
     def learning_status():
         """AI 학습 상태 API"""
         try:
             status = ai_service.get_learning_status()
-            return jsonify(status)
+            return success_response(data=status)
         except Exception as e:
-            return jsonify({'status': 'error', 'message': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/retrain_ai', methods=['POST'])
     def retrain_ai():
@@ -123,12 +125,12 @@ def create_routes(program_service, dashboard_service, ai_service):
             thread.daemon = True
             thread.start()
             
-            return jsonify({
-                'status': 'success',
-                'message': 'AI 재학습이 백그라운드에서 시작되었습니다.'
-            })
+            return success_response(
+                data={'status': 'started'},
+                message='AI 재학습이 백그라운드에서 시작되었습니다.'
+            )
         except Exception as e:
-            return jsonify({'status': 'error', 'message': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/start_search', methods=['POST'])
     def start_search():
@@ -181,13 +183,12 @@ def create_routes(program_service, dashboard_service, ai_service):
             thread.daemon = True
             thread.start()
             
-            return jsonify({
-                'success': True,
-                'message': '지원사업 검색이 백그라운드에서 시작되었습니다.'
-            })
+            return success_response(
+                message='지원사업 검색이 백그라운드에서 시작되었습니다.'
+            )
         except Exception as e:
             logger.error(f"크롤링 시작 실패: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/search_progress')
     def search_progress():
@@ -205,13 +206,10 @@ def create_routes(program_service, dashboard_service, ai_service):
                     'message': '검색이 시작되지 않았습니다.'
                 }
             
-            return jsonify({
-                'success': True,
-                'progress': search_progress
-            })
+            return success_response(data={'progress': search_progress})
         except Exception as e:
             logger.error(f"진행 상태 확인 실패: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/delete/<program_id>', methods=['POST'])
     def delete_program(program_id):
@@ -224,7 +222,7 @@ def create_routes(program_service, dashboard_service, ai_service):
             program = db_manager.get_program_by_external_id(program_id)
             
             if not program:
-                return jsonify({'success': False, 'error': '프로그램을 찾을 수 없습니다.'}), 404
+                return not_found_response('프로그램')
             
             # 삭제 이유 가져오기
             reason = request.json.get('reason', '') if request.json else ''
@@ -254,18 +252,19 @@ def create_routes(program_service, dashboard_service, ai_service):
                 
                 logger.info(f"🗑️ 프로그램 완전 삭제: {program.get('title', '')[:30]}...")
                 
-                return jsonify({
-                    'success': True,
-                    'message': '프로그램이 삭제되고 AI 학습용 데이터가 저장되었습니다.',
-                    'program_title': program.get('title', ''),
-                    'feedback_saved': feedback_success
-                })
+                return success_response(
+                    data={
+                        'program_title': program.get('title', ''),
+                        'feedback_saved': feedback_success
+                    },
+                    message='프로그램이 삭제되고 AI 학습용 데이터가 저장되었습니다.'
+                )
             else:
-                return jsonify({'success': False, 'error': '프로그램 삭제 실패'}), 500
+                return internal_server_error_response(message='프로그램 삭제 실패')
                 
         except Exception as e:
             logger.error(f"❌ 프로그램 삭제 실패: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/bulk-delete', methods=['POST'])
     def bulk_delete():
@@ -276,7 +275,7 @@ def create_routes(program_service, dashboard_service, ai_service):
             reason = data.get('reason', '일괄삭제')
             
             if not program_ids:
-                return jsonify({'success': False, 'error': '삭제할 프로그램이 선택되지 않았습니다.'}), 400
+                return validation_error_response({'program_ids': '삭제할 프로그램이 선택되지 않았습니다.'})
             
             from core.database import get_database_manager
             db_manager = get_database_manager()
@@ -321,17 +320,18 @@ def create_routes(program_service, dashboard_service, ai_service):
             
             logger.info(f"🗑️ 일괄 삭제 완료: {deleted_count}개 삭제, {feedback_saved_count}개 학습데이터 저장, {failed_count}개 실패")
             
-            return jsonify({
-                'success': True,
-                'message': f'{deleted_count}개 프로그램이 삭제되고 {feedback_saved_count}개 학습 데이터가 저장되었습니다.',
-                'deleted_count': deleted_count,
-                'feedback_saved_count': feedback_saved_count,
-                'failed_count': failed_count
-            })
+            return success_response(
+                data={
+                    'deleted_count': deleted_count,
+                    'feedback_saved_count': feedback_saved_count,
+                    'failed_count': failed_count
+                },
+                message=f'{deleted_count}개 프로그램이 삭제되고 {feedback_saved_count}개 학습 데이터가 저장되었습니다.'
+            )
             
         except Exception as e:
             logger.error(f"❌ 일괄 삭제 실패: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/feedback/<program_id>', methods=['POST'])
     def record_feedback(program_id):
@@ -343,7 +343,7 @@ def create_routes(program_service, dashboard_service, ai_service):
             confidence = data.get('confidence', 0.8)
             
             if not action:
-                return jsonify({'success': False, 'error': '액션이 필요합니다.'}), 400
+                return validation_error_response({'action': '액션이 필요합니다.'})
             
             from core.database import get_database_manager
             db_manager = get_database_manager()
@@ -359,16 +359,25 @@ def create_routes(program_service, dashboard_service, ai_service):
                 if program:
                     ai_service.ai_engine.record_user_feedback(program, action, reason)
                 
-                return jsonify({
-                    'success': True,
-                    'message': '피드백이 기록되었습니다.'
-                })
+                return success_response(message='피드백이 기록되었습니다.')
             else:
-                return jsonify({'success': False, 'error': '피드백 기록 실패'}), 500
+                return internal_server_error_response(message='피드백 기록 실패')
                 
         except Exception as e:
             logger.error(f"❌ 피드백 기록 실패: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
+    
+    @bp.route('/api/stats')
+    def dashboard_stats():
+        """대시보드 통계 API"""
+        try:
+            dashboard_data = dashboard_service.get_dashboard_data(limit=0)
+            stats = dashboard_data.get('stats', {})
+            return success_response(data=stats)
+            
+        except Exception as e:
+            logger.error(f"❌ 통계 조회 실패: {e}")
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/feedback_stats')
     def feedback_stats():
@@ -380,29 +389,40 @@ def create_routes(program_service, dashboard_service, ai_service):
             stats = db_manager.get_user_feedback_stats()
             recent_feedback = db_manager.get_recent_feedback(limit=20)
             
-            return jsonify({
-                'success': True,
+            return success_response(data={
                 'stats': stats,
                 'recent_feedback': recent_feedback
             })
             
         except Exception as e:
             logger.error(f"❌ 피드백 통계 조회 실패: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/reinforcement_learning/status')
     def rl_status():
         """강화학습 상태 조회 API"""
         try:
             status = ai_service.ai_engine.feedback_handler.get_rl_status()
-            return jsonify({
-                'success': True,
-                'reinforcement_learning': status
-            })
+            return success_response(data={'reinforcement_learning': status})
             
         except Exception as e:
             logger.error(f"❌ 강화학습 상태 조회 실패: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
+    
+    @bp.route('/api/auto_delete_status')
+    def auto_delete_status():
+        """자동 삭제 진행 상황 API"""
+        try:
+            status = ai_service.ai_engine.feedback_handler.get_auto_delete_status()
+            
+            return success_response(data={
+                'status': status,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ 자동 삭제 상태 조회 실패: {e}")
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/reinforcement_learning/optimize', methods=['POST'])
     def force_rl_optimization():
@@ -427,16 +447,17 @@ def create_routes(program_service, dashboard_service, ai_service):
             thread = threading.Thread(target=run_optimization, daemon=True)
             thread.start()
             
-            return jsonify({
-                'success': True,
-                'message': '딥러닝 모델 재훈련이 백그라운드에서 시작되었습니다. 진행 상황은 로그를 확인하세요.',
-                'status': 'started',
-                'timestamp': datetime.now().isoformat()
-            })
+            return success_response(
+                data={
+                    'status': 'started',
+                    'timestamp': datetime.now().isoformat()
+                },
+                message='딥러닝 모델 재훈련이 백그라운드에서 시작되었습니다. 진행 상황은 로그를 확인하세요.'
+            )
             
         except Exception as e:
             logger.error(f"❌ 강화학습 트리거 실패: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/ai_learning/detailed_status')
     def detailed_learning_status():
@@ -449,8 +470,7 @@ def create_routes(program_service, dashboard_service, ai_service):
             model_status = ai_service.ai_engine.model_manager.get_model_status()
             
             # 통합 응답
-            return jsonify({
-                'success': True,
+            return success_response(data={
                 'ai_learning_status': {
                     'feedback_system': feedback_summary,
                     'model_performance': model_status,
@@ -463,7 +483,7 @@ def create_routes(program_service, dashboard_service, ai_service):
             
         except Exception as e:
             logger.error(f"❌ AI 학습 상세 상태 조회 실패: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/api/debug_sites')
     def debug_sites():
@@ -476,8 +496,7 @@ def create_routes(program_service, dashboard_service, ai_service):
             sites = db_manager.get_crawling_sites(enabled_only=False)
             enabled_sites = db_manager.get_crawling_sites(enabled_only=True)
             
-            return jsonify({
-                'success': True,
+            return success_response(data={
                 'total_sites': len(sites),
                 'enabled_sites_count': len(enabled_sites),
                 'sites_detail': [
@@ -502,7 +521,7 @@ def create_routes(program_service, dashboard_service, ai_service):
             })
         except Exception as e:
             logger.error(f"사이트 디버그 실패: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
+            return internal_server_error_response(message=str(e))
     
     @bp.route('/static/<path:filename>')
     def static_files(filename):

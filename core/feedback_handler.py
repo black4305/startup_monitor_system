@@ -74,6 +74,16 @@ class FeedbackHandler:
                 # 강화학습 큐에 추가
                 self._add_to_rl_queue(program_data, action, reason)
                 
+                # 삭제 액션인 경우 유사한 프로그램 자동 삭제 (백그라운드)
+                if action == 'delete':
+                    import threading
+                    delete_thread = threading.Thread(
+                        target=self.auto_delete_similar_programs,
+                        args=(program_data, reason)
+                    )
+                    delete_thread.daemon = True
+                    delete_thread.start()
+                
                 # 재훈련 필요성 체크
                 self.check_retrain_needed()
                 
@@ -394,6 +404,152 @@ class FeedbackHandler:
         except Exception as e:
             logger.error(f"❌ 학습 데이터 준비 실패: {e}")
             return []
+    
+    def auto_delete_similar_programs(self, deleted_program: Dict, reason: str):
+        """삭제된 프로그램과 유사한 프로그램들을 자동으로 찾아서 삭제"""
+        try:
+            logger.info(f"🔍 유사 프로그램 자동 삭제 시작: {deleted_program.get('title', '')[:50]}")
+            
+            # 자동 삭제 상태 초기화
+            self.auto_delete_status = {
+                'is_running': True,
+                'total_programs': 0,
+                'processed': 0,
+                'deleted': 0,
+                'current_program': '',
+                'trigger_program': deleted_program.get('title', ''),
+                'started_at': datetime.now().isoformat()
+            }
+            
+            # 삭제된 프로그램의 특징 추출
+            deleted_keywords = self.extract_keywords_from_text(
+                f"{deleted_program.get('title', '')} {deleted_program.get('content', '')}"
+            )
+            deleted_site = deleted_program.get('site_name', '')
+            
+            # 활성화된 모든 프로그램 가져오기
+            active_programs = self.db_manager.get_all_programs(
+                include_inactive=False,
+                limit=1000
+            )
+            
+            self.auto_delete_status['total_programs'] = len(active_programs)
+            
+            auto_deleted_count = 0
+            auto_deleted_programs = []
+            
+            for i, program in enumerate(active_programs):
+                # 진행 상황 업데이트
+                self.auto_delete_status['processed'] = i + 1
+                self.auto_delete_status['current_program'] = program.get('title', '')[:50]
+                
+                # 이미 삭제된 프로그램은 건너뛰기
+                if program.get('external_id') == deleted_program.get('external_id'):
+                    continue
+                
+                # 유사도 계산
+                similarity_score = self.calculate_similarity(
+                    program, deleted_program, deleted_keywords, deleted_site
+                )
+                
+                # 유사도가 높으면 자동 삭제 (70% 이상)
+                if similarity_score >= 0.7:
+                    logger.info(f"  → 유사 프로그램 발견 (유사도: {similarity_score:.1%}): {program.get('title', '')[:50]}")
+                    
+                    # 1. 자동 삭제 피드백 저장
+                    feedback_success = self.db_manager.insert_user_feedback(
+                        program_external_id=program.get('external_id'),
+                        action='delete',
+                        reason=f"자동 삭제 - '{deleted_program.get('title', '')[:30]}'와 유사 (유사도: {similarity_score:.1%})",
+                        confidence=similarity_score
+                    )
+                    
+                    # 2. 프로그램 비활성화
+                    if self.db_manager.deactivate_program(program.get('external_id')):
+                        auto_deleted_count += 1
+                        self.auto_delete_status['deleted'] = auto_deleted_count
+                        auto_deleted_programs.append({
+                            'title': program.get('title', ''),
+                            'similarity': similarity_score,
+                            'external_id': program.get('external_id')
+                        })
+                    
+            # 자동 삭제 완료
+            self.auto_delete_status['is_running'] = False
+            self.auto_delete_status['completed_at'] = datetime.now().isoformat()
+            
+            if auto_deleted_count > 0:
+                logger.info(f"✅ 총 {auto_deleted_count}개 프로그램 자동 삭제 완료")
+                
+                # 시스템 로그에 기록
+                self.db_manager.log_system_event(
+                    level='INFO',
+                    category='AUTO_DELETE',
+                    message=f'유사 프로그램 자동 삭제',
+                    details={
+                        'trigger_program': deleted_program.get('title', ''),
+                        'auto_deleted_count': auto_deleted_count,
+                        'auto_deleted_programs': auto_deleted_programs[:10],  # 최대 10개만 로그에 기록
+                        'timestamp': datetime.now().isoformat()
+                    }
+                )
+            
+        except Exception as e:
+            logger.error(f"❌ 유사 프로그램 자동 삭제 실패: {e}")
+    
+    def calculate_similarity(self, program1: Dict, program2: Dict, keywords2: List[str], site2: str) -> float:
+        """두 프로그램의 유사도 계산 (0~1)"""
+        try:
+            # 1. 키워드 유사도 (40%)
+            keywords1 = self.extract_keywords_from_text(
+                f"{program1.get('title', '')} {program1.get('content', '')}"
+            )
+            
+            keyword_overlap = len(set(keywords1) & set(keywords2))
+            keyword_total = len(set(keywords1) | set(keywords2))
+            keyword_similarity = keyword_overlap / keyword_total if keyword_total > 0 else 0
+            
+            # 2. 제목 유사도 (30%)
+            title1 = program1.get('title', '').lower()
+            title2 = program2.get('title', '').lower()
+            
+            # 간단한 문자열 유사도 (실제로는 더 정교한 알고리즘 사용 가능)
+            title_words1 = set(title1.split())
+            title_words2 = set(title2.split())
+            title_overlap = len(title_words1 & title_words2)
+            title_total = len(title_words1 | title_words2)
+            title_similarity = title_overlap / title_total if title_total > 0 else 0
+            
+            # 3. 사이트 일치도 (20%)
+            site1 = program1.get('site_name', '')
+            site_similarity = 1.0 if site1 == site2 else 0.0
+            
+            # 4. AI 점수 유사도 (10%)
+            score1 = program1.get('ai_score', 50)
+            score2 = program2.get('ai_score', 50)
+            score_diff = abs(score1 - score2)
+            score_similarity = 1.0 - (score_diff / 100.0)  # 점수 차이가 작을수록 유사
+            
+            # 총 유사도 계산
+            total_similarity = (
+                keyword_similarity * 0.4 +
+                title_similarity * 0.3 +
+                site_similarity * 0.2 +
+                score_similarity * 0.1
+            )
+            
+            return total_similarity
+            
+        except Exception as e:
+            logger.error(f"❌ 유사도 계산 실패: {e}")
+            return 0.0
+    
+    def get_auto_delete_status(self) -> Dict[str, Any]:
+        """자동 삭제 진행 상황 반환"""
+        if hasattr(self, 'auto_delete_status'):
+            return self.auto_delete_status
+        else:
+            return {'is_running': False}
     
     def get_learning_patterns(self) -> Dict[str, Any]:
         """학습된 패턴 정보 반환"""

@@ -1,0 +1,26 @@
+{
+  "model_type": "EnhancedDeepLearningModel",
+  "created_at": "20250720_130840",
+  "training_samples": 68,
+  "threshold": 0.30000001192092896,
+  "model_weights": {
+    "deep_learning": 0.3333333333333333,
+    "keyword_score": 0.3333333333333333,
+    "pattern_score": 0.3333333333333333
+  },
+  "performance": {
+    "accuracy": 0.8,
+    "precision": 0.7,
+    "recall": 1.0,
+    "f1": 0.8235294117647058
+  },
+  "training_device": "cuda",
+  "cpu_compatible": true,
+  "adaptive_threshold": true,
+  "improvements": [
+    "실제 피드백 데이터 기반 학습",
+    "향상된 AI 점수 계산 로직",
+    "동적 임계값 조정",
+    "강화학습 최적화"
+  ]
+}

@@ -39,6 +39,14 @@ class CustomUnpickler(pickle.Unpickler):
                 return DeepSupportClassifier
             elif name == 'AppleSiliconFeatureExtractor':
                 return AppleSiliconFeatureExtractor
+            elif name == 'EnhancedDeepLearningModel':
+                return EnhancedDeepLearningModel
+            elif name == 'EnhancedFeatureExtractor':
+                return EnhancedFeatureExtractor
+            elif name == 'ImprovedStartupClassifier':
+                return ImprovedStartupClassifier
+            elif name == 'PowerfulStartupClassifier':
+                return PowerfulStartupClassifier
         
         # 기본 동작
         return super().find_class(module, name)
@@ -305,13 +313,30 @@ class DeepLearningEngine:
             
             self.logger.info("✅ 모델 파일 로드 성공")
             
-            # 모델 정보 저장
-            self.model_info = {
-                'model_type': model_data.get('model_type', 'Unknown'),
-                'created_at': model_data.get('created_at', 'Unknown'),
-                'training_accuracy': model_data.get('training_accuracy', 0.0),
-                'version': model_data.get('version', '1.0')
-            }
+            # 모델 타입 확인
+            if isinstance(model_data, dict):
+                # 딕셔너리 형태의 모델 데이터
+                self.model_info = {
+                    'model_type': model_data.get('model_type', 'Unknown'),
+                    'created_at': model_data.get('created_at', 'Unknown'),
+                    'training_accuracy': model_data.get('training_accuracy', 0.0),
+                    'version': model_data.get('version', '1.0')
+                }
+            elif hasattr(model_data, '__class__'):
+                # EnhancedDeepLearningModel 같은 객체
+                self.model_info = {
+                    'model_type': model_data.__class__.__name__,
+                    'created_at': 'Unknown',
+                    'training_accuracy': getattr(model_data, 'accuracy', 0.0),
+                    'version': getattr(model_data, 'version', '1.0')
+                }
+                # 객체를 직접 사용
+                self.model = model_data
+                self.model_loaded = True
+                if hasattr(model_data, 'feature_extractor'):
+                    self.feature_extractor = model_data.feature_extractor
+                self.logger.info(f"✅ {self.model_info['model_type']} 모델 로드 완료")
+                return
             
             self.logger.info(f"✅ 모델 타입: {self.model_info['model_type']}")
             self.logger.info(f"✅ 훈련 정확도: {self.model_info['training_accuracy']:.4f}")
@@ -477,4 +502,273 @@ def reload_deep_learning_engine(model_path=None) -> DeepLearningEngine:
         project_root = Path(__file__).parent.parent
         model_path = str(project_root / 'models' / 'apple_silicon_production_model.pkl')
     _deep_learning_engine = DeepLearningEngine(model_path)
-    return _deep_learning_engine 
+    return _deep_learning_engine
+
+
+# ============================================
+# 강화학습 모델 클래스들 (코랩 호환성)
+# ============================================
+
+class EnhancedFeatureExtractor:
+    """향상된 특성 추출기"""
+    
+    def __init__(self, sentence_model_name='jhgan/ko-sroberta-multitask'):
+        self.sentence_model = SentenceTransformer(sentence_model_name)
+        
+    def extract_features(self, texts, is_training=True):
+        """텍스트에서 특성 추출"""
+        if isinstance(texts, str):
+            texts = [texts]
+        
+        # Sentence embeddings
+        embeddings = self.sentence_model.encode(texts)
+        
+        # 키워드 특성 추가
+        keyword_features = []
+        for text in texts:
+            text_lower = text.lower()
+            features = {
+                'support_keywords': sum([
+                    'tips' in text_lower,
+                    '창업' in text_lower,
+                    '지원' in text_lower,
+                    '사업' in text_lower,
+                    'k-스타트업' in text_lower,
+                    '창업진흥원' in text_lower,
+                ]) * 10,
+                'spam_keywords': sum([
+                    '광고' in text_lower,
+                    '홍보' in text_lower,
+                    '캠페인' in text_lower,
+                    '수료식' in text_lower,
+                    '이벤트' in text_lower,
+                ]) * (-15),
+                'context_features': sum([
+                    bool(re.search(r'\d+억원|\d+천만원|\d+백만원', text)),
+                    bool(re.search(r'신청기간|마감일|접수기간', text)),
+                    bool(re.search(r'지원대상|신청자격', text)),
+                    bool(re.search(r'정부|공공기관|진흥원', text)),
+                ]) * 5
+            }
+            keyword_features.append(sum(features.values()))
+        
+        # 특성 결합
+        keyword_features = np.array(keyword_features).reshape(-1, 1)
+        combined_features = np.hstack([embeddings, keyword_features])
+        
+        return combined_features
+
+
+class ImprovedStartupClassifier(nn.Module):
+    """개선된 스타트업 분류기"""
+    
+    def __init__(self, input_dim=769, hidden_dim=512):
+        super().__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, 256)
+        self.fc3 = nn.Linear(256, 128)
+        self.fc4 = nn.Linear(128, 1)
+        self.dropout = nn.Dropout(0.3)
+        
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = F.relu(self.fc2(x))
+        x = self.dropout(x)
+        x = F.relu(self.fc3(x))
+        x = self.fc4(x)
+        return x
+
+
+class PowerfulStartupClassifier(nn.Module):
+    """강력한 스타트업 분류기 (A100 최적화)"""
+    
+    def __init__(self, input_dim=769, hidden_dim=1024):
+        super().__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, 512)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, 128)
+        self.fc5 = nn.Linear(128, 1)
+        self.dropout = nn.Dropout(0.3)
+        self.batch_norm1 = nn.BatchNorm1d(hidden_dim)
+        self.batch_norm2 = nn.BatchNorm1d(512)
+        self.batch_norm3 = nn.BatchNorm1d(256)
+        self.batch_norm4 = nn.BatchNorm1d(128)
+        
+    def forward(self, x):
+        x = F.relu(self.batch_norm1(self.fc1(x)))
+        x = self.dropout(x)
+        x = F.relu(self.batch_norm2(self.fc2(x)))
+        x = self.dropout(x)
+        x = F.relu(self.batch_norm3(self.fc3(x)))
+        x = self.dropout(x)
+        x = F.relu(self.batch_norm4(self.fc4(x)))
+        x = self.fc5(x)
+        return x
+
+
+class EnhancedDeepLearningModel:
+    """향상된 딥러닝 모델 래퍼"""
+    
+    def __init__(self, feature_extractor, classifier, device='cuda'):
+        self.feature_extractor = feature_extractor
+        self.classifier = classifier
+        
+        # 디바이스 자동 감지
+        if torch.cuda.is_available():
+            self.device = torch.device('cuda')
+        elif torch.backends.mps.is_available():
+            self.device = torch.device('mps')
+        else:
+            self.device = torch.device('cpu')
+        
+        # 모델을 CPU로 유지 (메모리 효율성)
+        self.classifier = self.classifier.cpu()
+        
+        # 동적 임계값 (초기값을 더 보수적으로)
+        self.threshold = 0.65  # 55점 대신 65점부터
+        self.adaptive_threshold = True
+        self.threshold_min = 0.55
+        self.threshold_max = 0.85
+        
+        # 모델 가중치 (딥러닝, 키워드, 패턴)
+        self.model_weights = {
+            'deep_learning': 0.6,
+            'keyword_score': 0.3,
+            'pattern_score': 0.1
+        }
+        
+    def predict(self, texts):
+        """텍스트 예측"""
+        if isinstance(texts, str):
+            texts = [texts]
+        
+        features = self.feature_extractor.extract_features(texts, is_training=False)
+        features_tensor = torch.FloatTensor(features).to(self.device)
+        
+        self.classifier = self.classifier.to(self.device)
+        self.classifier.eval()
+        
+        with torch.no_grad():
+            outputs = self.classifier(features_tensor)
+            probabilities = torch.sigmoid(outputs).cpu().numpy()
+        
+        self.classifier = self.classifier.cpu()
+        
+        return (probabilities > self.threshold).astype(int).flatten()
+    
+    def calculate_ai_score(self, text):
+        """AI 점수 계산 (향상된 버전)"""
+        import re
+        
+        # 1. 딥러닝 모델 예측
+        features = self.feature_extractor.extract_features([text], is_training=False)
+        features_tensor = torch.FloatTensor(features).to(self.device)
+        
+        self.classifier = self.classifier.to(self.device)
+        self.classifier.eval()
+        
+        with torch.no_grad():
+            output = self.classifier(features_tensor)
+            probability = torch.sigmoid(output).cpu().item()
+        
+        self.classifier = self.classifier.cpu()
+        
+        # 2. 키워드 점수 계산
+        text_lower = text.lower()
+        
+        # 공식 기관 키워드 (높은 가중치)
+        official_keywords = {
+            'tips': 20, '창업진흥원': 20, 'k-스타트업': 20,
+            '중소벤처기업부': 20, '과학기술정보통신부': 20,
+            '한국산업기술진흥원': 15, '정보통신산업진흥원': 15
+        }
+        
+        # 일반 긍정 키워드
+        positive_keywords = {
+            '창업': 10, '지원': 10, '사업': 8, '육성': 8,
+            '투자': 10, '지원금': 12, '보조금': 12,
+            '스타트업': 10, '벤처': 8, '혁신': 8
+        }
+        
+        # 스팸 키워드 (큰 감점)
+        spam_keywords = {
+            '광고': -20, '홍보': -20, '이벤트': -15,
+            '수료식': -20, '캠페인': -15, '할인': -15,
+            '카페': -20, '맛집': -20, '부동산': -20
+        }
+        
+        keyword_score = 0
+        
+        # 제목과 내용 구분 (제목에 스팸 키워드가 있으면 더 큰 감점)
+        title_part = text.split('\n')[0] if '\n' in text else text[:100]
+        
+        for keyword, score in official_keywords.items():
+            if keyword in text_lower:
+                keyword_score += score
+        
+        for keyword, score in positive_keywords.items():
+            if keyword in text_lower:
+                keyword_score += score
+        
+        for keyword, penalty in spam_keywords.items():
+            if keyword in title_part.lower():
+                keyword_score += penalty * 2  # 제목에 있으면 2배 감점
+            elif keyword in text_lower:
+                keyword_score += penalty
+        
+        # 3. 패턴 점수 (금액, 기간 등)
+        pattern_score = 0
+        
+        # 금액 정보
+        if re.search(r'\d+억원|\d+천만원|\d+백만원', text):
+            pattern_score += 15
+        
+        # 기간 정보
+        if re.search(r'신청기간|마감일|접수기간|모집기간', text):
+            pattern_score += 10
+        
+        # 대상 정보
+        if re.search(r'지원대상|신청자격|대상기업', text):
+            pattern_score += 10
+        
+        # 4. 종합 점수 계산
+        final_score = (
+            probability * 100 * self.model_weights['deep_learning'] +
+            keyword_score * self.model_weights['keyword_score'] +
+            pattern_score * self.model_weights['pattern_score']
+        )
+        
+        # 점수 범위 제한 (0-100)
+        final_score = max(0, min(100, final_score))
+        
+        return final_score
+    
+    def update_threshold(self, feedback_results):
+        """피드백 기반 임계값 업데이트"""
+        if not self.adaptive_threshold:
+            return
+        
+        # 성과 계산
+        tp = feedback_results.get('true_positive', 0)
+        fp = feedback_results.get('false_positive', 0)
+        fn = feedback_results.get('false_negative', 0)
+        
+        if tp + fp > 0:
+            precision = tp / (tp + fp)
+        else:
+            precision = 0
+        
+        if tp + fn > 0:
+            recall = tp / (tp + fn)
+        else:
+            recall = 0
+        
+        # 임계값 조정
+        if precision < 0.7:  # 정밀도가 낮으면
+            self.threshold = min(self.threshold + 0.05, self.threshold_max)
+        elif recall < 0.7:  # 재현율이 낮으면
+            self.threshold = max(self.threshold - 0.05, self.threshold_min)
+        
+        logging.info(f"🎯 임계값 업데이트: {self.threshold:.3f} (정밀도: {precision:.3f}, 재현율: {recall:.3f})") 
