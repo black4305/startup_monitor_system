@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # 🗄️ PostgreSQL 데이터베이스 (Supabase 대체)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ai_monitor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-defaultpassword}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - startup-monitor-network
+
+  # 🔄 Redis 캐시
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - startup-monitor-network
+
+  # 🤖 메인 애플리케이션
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=False
+      - FLASK_PORT=5001
+      - USE_POSTGRESQL=true
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:-defaultpassword}@postgres:5432/ai_monitor
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env.production
+    volumes:
+      - ./models:/app/models
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - startup-monitor-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 🔍 Nginx 리버스 프록시
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./static:/usr/share/nginx/html/static:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - startup-monitor-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  startup-monitor-network:
+    driver: bridge

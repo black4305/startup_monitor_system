@@ -125,6 +125,17 @@ class AIEngine:
                 try:
                     stats["total_programs"] += 1
                     
+                    # 0단계: 중복 체크
+                    url = program_data.get('url', '')
+                    if url:
+                        exists, is_active = self.db_manager.check_program_exists(url)
+                        if exists:
+                            if is_active:
+                                logger.info(f"⏭️ 이미 존재하는 프로그램 건너뛰기: {program_data.get('title', '')[:30]}...")
+                            else:
+                                logger.info(f"🚫 삭제된 프로그램 건너뛰기: {program_data.get('title', '')[:30]}...")
+                            return False
+                    
                     # 1단계: AI 분석
                     analyzed_program = self.analyze_program_with_ai(program_data)
                     stats["analyzed_programs"] += 1

@@ -49,7 +49,7 @@ class WebCrawler:
         # 인코딩 시도 순서
         self.encodings = ['utf-8', 'euc-kr', 'cp949', 'iso-8859-1']
         
-        logger.info("🔧 강화된 크롤러 초기화 완료")
+        logger.info("🌐 웹 크롤러 초기화 완료")
     
     def update_session_headers(self):
         """세션 헤더 업데이트 (User-Agent 로테이션)"""
@@ -343,7 +343,8 @@ class WebCrawler:
                 # 통계 업데이트
                 for site_programs_count in batch_results:
                     total_programs_found += site_programs_count
-                    completed_sites += 1
+                
+                completed_sites += len(batch_results)
                 
                 # 배치 간 지연
                 if i + concurrent_batch < len(sites):
@@ -712,92 +713,118 @@ class WebCrawler:
         return programs
     
     def extract_brief_content(self, url: str, title: str) -> str:
-        """URL에서 상세한 공고 내용 추출 (AI 분석용)"""
+        """URL에서 상세한 공고 내용 추출 (AI 분석용 - 강화 버전)"""
         try:
-            response = self.session.get(url, timeout=10)
-            soup = BeautifulSoup(response.content, 'html.parser')
+            # 상세 페이지 접속
+            page_soup = self.get_page_with_fallback(url, title[:20])
+            if not page_soup:
+                logger.warning(f"⚠️ 상세 페이지 접속 실패: {url}")
+                return "상세 내용을 가져올 수 없습니다."
             
             # 불필요한 요소 제거
-            for unwanted in soup(['script', 'style', 'nav', 'header', 'footer', 'aside']):
+            for unwanted in page_soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'comment']):
                 unwanted.decompose()
             
             extracted_content = []
             
             # 1단계: 제목 다시 추출 (페이지 내 제목이 더 정확할 수 있음)
-            title_selectors = ['h1', 'h2', '.title', '.subject', '.board-title', '.notice-title']
+            title_selectors = [
+                'h1', 'h2', '.title', '.subject', '.board-title', '.notice-title',
+                '.view-title', '.content-title', '.detail-title', 'article h1'
+            ]
             for selector in title_selectors:
-                title_elem = soup.select_one(selector)
+                title_elem = page_soup.select_one(selector)
                 if title_elem and len(title_elem.get_text().strip()) > 5:
                     page_title = title_elem.get_text().strip()
-                    if page_title != title:  # 기존 제목과 다르면 추가
+                    if page_title != title and len(page_title) > 10:  # 기존 제목과 다르고 충분히 길면
                         extracted_content.append(f"📋 상세제목: {page_title}")
                     break
             
-            # 2단계: 본문 내용 추출 (더 많은 선택자 시도)
+            # 2단계: 본문 내용 추출 (더 포괄적인 선택자)
             content_selectors = [
+                # 일반적인 콘텐츠 선택자
                 '.content', '.board-content', '.notice-content', '.view-content',
                 '#content', '#board_content', '#notice_content', '#view_content',
                 '.post-content', '.article-content', '.text-content', '.detail-content',
-                'main', '.main', '#main', '.container .row .col'
+                
+                # 테이블 기반 콘텐츠
+                '.board-view', '.view-body', '.content-body', '.detail-body',
+                'table.view', 'table.board', '.board_view', '#board_view',
+                
+                # 기타 가능한 선택자
+                'article', '.article', 'main', '.main', '#main',
+                '.container .content', '.wrapper .content', '.board-wrap'
             ]
             
             main_content = ""
             for selector in content_selectors:
-                content_elem = soup.select_one(selector)
+                content_elem = page_soup.select_one(selector)
                 if content_elem:
-                    main_content = content_elem.get_text(separator=' ', strip=True)
+                    # 테이블이면 구조적으로 파싱
+                    if content_elem.name == 'table' or content_elem.find('table'):
+                        main_content = self._parse_table_content(content_elem)
+                    else:
+                        main_content = content_elem.get_text(separator='\n', strip=True)
+                    
                     if len(main_content) > 100:  # 충분한 내용이 있으면
                         break
             
+            # 3단계: 본문이 없으면 전체 body에서 핵심 정보 추출
+            if not main_content or len(main_content) < 200:
+                body_text = page_soup.get_text(separator='\n', strip=True)
+                main_content = self._extract_relevant_content(body_text)
+            
             if main_content:
-                # 핵심 정보 추출을 위한 키워드 기반 파싱
+                # 핵심 정보 추출을 위한 구조화된 파싱
                 lines = main_content.split('\n')
-                important_lines = []
+                important_info = {}
                 
-                # 중요한 정보를 포함한 줄 찾기
-                important_keywords = [
-                    '지원금액', '지원규모', '지원내용', '지원대상', '신청기간', '접수기간',
-                    '마감일', '선정기준', '평가기준', '자격요건', '지원조건', '사업기간',
-                    '억원', '만원', '천만원', '백만원', '원', '달러', 'USD', 'KRW',
-                    '최대', '최소', '한도', '범위', '개월', '년간', '연간'
-                ]
+                # 중요한 정보 패턴
+                info_patterns = {
+                    '지원금액': r'(지원금액|지원규모|사업비|지원한도)[\s:：]*(.*?)(?:\n|$)',
+                    '지원대상': r'(지원대상|신청자격|대상기업|참가자격)[\s:：]*(.*?)(?:\n|$)',
+                    '신청기간': r'(신청기간|접수기간|모집기간|공고기간)[\s:：]*(.*?)(?:\n|$)',
+                    '지원내용': r'(지원내용|사업내용|주요내용|지원사항)[\s:：]*(.*?)(?:\n|$)',
+                    '선정기준': r'(선정기준|평가기준|심사기준|선발기준)[\s:：]*(.*?)(?:\n|$)'
+                }
                 
-                for line in lines:
-                    line = line.strip()
-                    if len(line) > 10 and any(keyword in line for keyword in important_keywords):
-                        important_lines.append(line)
+                import re
+                for key, pattern in info_patterns.items():
+                    match = re.search(pattern, main_content, re.MULTILINE | re.DOTALL)
+                    if match:
+                        value = match.group(2).strip()
+                        if value and len(value) > 5:
+                            important_info[key] = value[:300]  # 최대 300자
                 
-                # 중요한 정보가 있으면 우선 포함
-                if important_lines:
-                    extracted_content.extend(important_lines[:5])  # 최대 5줄
+                # 구조화된 내용 생성
+                if important_info:
+                    for key, value in important_info.items():
+                        extracted_content.append(f"\n🔸 {key}: {value}")
                 
-                # 일반 내용도 포함 (더 긴 길이로)
-                extracted_content.append(f"📄 본문: {main_content[:1500]}")  # 500자 → 1500자로 증가
+                # 금액 정보 특별 추출
+                money_matches = re.findall(r'(\d+(?:,\d+)*(?:\.\d+)?\s*(?:억원|천만원|백만원|만원|원))', main_content)
+                if money_matches:
+                    extracted_content.append(f"\n💰 금액정보: {', '.join(set(money_matches[:5]))}")
+                
+                # 날짜 정보 특별 추출
+                date_matches = re.findall(r'(\d{4}[\s년.-]\d{1,2}[\s월.-]\d{1,2}[\s일]?)', main_content)
+                if date_matches:
+                    extracted_content.append(f"\n📅 일정정보: {', '.join(set(date_matches[:5]))}")
+                
+                # 전체 내용 요약 (최대 1500자)
+                if len(extracted_content) < 3:  # 구조화된 정보가 부족하면
+                    summary = self._summarize_content(main_content, 1500)
+                    extracted_content.append(f"\n📄 내용요약:\n{summary}")
             
-            # 3단계: 표나 목록에서 구조화된 정보 추출
-            tables = soup.find_all('table')
-            for table in tables[:2]:  # 최대 2개 테이블
-                table_text = table.get_text(separator=' | ', strip=True)
-                if any(keyword in table_text for keyword in ['지원', '금액', '대상', '기간']):
-                    extracted_content.append(f"📊 표정보: {table_text[:300]}")
-            
-            # 4단계: 리스트 정보 추출
-            lists = soup.find_all(['ul', 'ol'])
-            for list_elem in lists[:2]:  # 최대 2개 리스트
-                list_text = list_elem.get_text(separator=' / ', strip=True)
-                if any(keyword in list_text for keyword in ['지원', '대상', '조건', '기준']):
-                    extracted_content.append(f"📝 목록: {list_text[:300]}")
-            
-            # 결과 조합
+            # 최종 컨텐츠 조합
             if extracted_content:
-                final_content = ' || '.join(extracted_content)
-                return final_content[:3000]  # 최대 3000자까지 허용
+                return '\n'.join(extracted_content)
             else:
-                return f"📋 제목: {title}"
+                return f"제목: {title}\n(상세 내용 추출 실패)"
                 
         except Exception as e:
-            logger.debug(f"⚠️ 내용 추출 실패 {url}: {e}")
-            return f"📋 제목: {title}"
+            logger.error(f"❌ 상세 내용 추출 실패 {url}: {e}")
+            return f"제목: {title}\n(상세 내용 로드 오류)"
     
     def is_support_program_title(self, title: str) -> bool:
         """제목이 지원사업인지 판단"""
@@ -829,4 +856,105 @@ class WebCrawler:
             if keyword in title_lower:
                 return True
         
-        return False 
+        return False
+    
+    def _parse_table_content(self, table_elem) -> str:
+        """테이블 형식의 콘텐츠를 구조적으로 파싱"""
+        content_lines = []
+        
+        # 테이블의 모든 행 처리
+        rows = table_elem.find_all('tr')
+        for row in rows:
+            # th와 td 요소 추출
+            headers = row.find_all('th')
+            cells = row.find_all('td')
+            
+            # 헤더가 있으면 헤더: 값 형식으로
+            if headers and cells:
+                for i, header in enumerate(headers):
+                    if i < len(cells):
+                        header_text = header.get_text(strip=True)
+                        cell_text = cells[i].get_text(strip=True)
+                        if header_text and cell_text:
+                            content_lines.append(f"{header_text}: {cell_text}")
+            # 헤더가 없으면 셀 내용만
+            elif cells:
+                row_text = ' | '.join([cell.get_text(strip=True) for cell in cells])
+                if row_text.strip():
+                    content_lines.append(row_text)
+        
+        return '\n'.join(content_lines)
+    
+    def _extract_relevant_content(self, full_text: str) -> str:
+        """전체 텍스트에서 지원사업 관련 내용만 추출"""
+        lines = full_text.split('\n')
+        relevant_lines = []
+        
+        # 관련 키워드
+        relevant_keywords = [
+            '지원', '사업', '공고', '모집', '신청', '대상', '자격', '기간',
+            '금액', '규모', '내용', '조건', '선정', '평가', '제출', '서류',
+            '창업', '스타트업', '벤처', '기업', '투자', '융자', '보조금',
+            '억원', '천만원', '백만원', '만원', '기한', '마감', '접수'
+        ]
+        
+        # 각 줄을 검사하여 관련 내용만 추출
+        for line in lines:
+            line_lower = line.lower()
+            if any(keyword in line_lower for keyword in relevant_keywords):
+                relevant_lines.append(line.strip())
+                
+                # 충분한 내용을 수집했으면 중단
+                if len('\n'.join(relevant_lines)) > 1000:
+                    break
+        
+        return '\n'.join(relevant_lines)
+    
+    def _summarize_content(self, content: str, max_length: int = 1500) -> str:
+        """긴 콘텐츠를 요약"""
+        if len(content) <= max_length:
+            return content
+        
+        # 문장 단위로 분리
+        sentences = content.replace('。', '.').split('.')
+        
+        # 중요한 문장 우선 선택
+        important_sentences = []
+        other_sentences = []
+        
+        important_keywords = [
+            '지원금액', '지원규모', '지원대상', '신청기간', '마감일',
+            '선정기준', '평가기준', '지원내용', '사업내용', '지원조건',
+            '억원', '천만원', '백만원', '만원'
+        ]
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # 중요 키워드를 포함한 문장 우선
+            if any(keyword in sentence for keyword in important_keywords):
+                important_sentences.append(sentence)
+            else:
+                other_sentences.append(sentence)
+        
+        # 중요 문장부터 채우고, 남은 공간에 다른 문장 추가
+        result = []
+        current_length = 0
+        
+        # 중요 문장 추가
+        for sentence in important_sentences:
+            if current_length + len(sentence) < max_length:
+                result.append(sentence)
+                current_length += len(sentence) + 1
+        
+        # 나머지 문장 추가
+        for sentence in other_sentences:
+            if current_length + len(sentence) < max_length:
+                result.append(sentence)
+                current_length += len(sentence) + 1
+            else:
+                break
+        
+        return '. '.join(result) + '...' 

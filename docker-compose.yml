@@ -5,15 +5,18 @@ services:
   app:
     build: .
     ports:
-      - "5000:5000"
+      - "5001:5001"
     environment:
       - FLASK_ENV=development
       - FLASK_DEBUG=True
+      - FLASK_PORT=5001
+      - USE_POSTGRESQL=false
     env_file:
       - .env
     volumes:
       - .:/app
       - /app/__pycache__
+      - ./models:/app/models
     depends_on:
       - redis
     restart: unless-stopped
@@ -36,8 +39,10 @@ services:
     image: nginx:alpine
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./static:/usr/share/nginx/html/static:ro
     depends_on:
       - app
     restart: unless-stopped

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🚀 AI 지원사업 모니터링 시스템 - 런처 스크립트 (리팩토링 버전)
+🚀 AI 지원사업 모니터링 시스템 - 런처 스크립트
 """
 
 import sys
@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if __name__ == '__main__':
     try:
         from core.app import main
-        print("🚀 리팩토링된 AI 지원사업 모니터링 시스템 시작")
+        print("🚀 AI 지원사업 모니터링 시스템 시작")
         main()
     except ImportError as e:
         print(f"❌ 애플리케이션 import 실패: {e}")

@@ -366,7 +366,7 @@ class DeepLearningEngine:
                 raise ValueError("딥러닝 모델 상태가 없습니다.")
             
             self.is_loaded = True
-            self.logger.info("🎉 딥러닝 엔진 준비 완료!")
+            self.logger.info("🎉 강화학습 엔진 준비 완료!")
             
         except Exception as e:
             self.logger.error(f"❌ 딥러닝 모델 로딩 실패: {e}")
@@ -451,10 +451,15 @@ class DeepLearningEngine:
     def calculate_score(self, text: str) -> float:
         """텍스트에 대한 지원사업 점수 계산 (0~100)"""
         try:
-            probabilities = self.predict_proba([text])
-            # 지원사업일 확률 * 100
-            score = probabilities[0][1] * 100
-            return float(score)
+            # EnhancedDeepLearningModel을 사용하는 경우
+            if hasattr(self.model, 'calculate_ai_score'):
+                return self.model.calculate_ai_score(text)
+            # 기존 모델 사용
+            else:
+                probabilities = self.predict_proba([text])
+                # 지원사업일 확률 * 100
+                score = probabilities[0][1] * 100
+                return float(score)
         except Exception as e:
             self.logger.error(f"❌ 점수 계산 실패: {e}")
             return 50.0  # 기본값
@@ -659,7 +664,7 @@ class EnhancedDeepLearningModel:
         return (probabilities > self.threshold).astype(int).flatten()
     
     def calculate_ai_score(self, text):
-        """AI 점수 계산 (향상된 버전)"""
+        """AI 점수 계산 (창업/스타트업 지원사업 특화)"""
         import re
         
         # 1. 딥러닝 모델 예측
@@ -675,73 +680,146 @@ class EnhancedDeepLearningModel:
         
         self.classifier = self.classifier.cpu()
         
-        # 2. 키워드 점수 계산
+        # 2. 창업/스타트업 지원사업 필터링
         text_lower = text.lower()
+        title_part = text.split('\n')[0] if '\n' in text else text[:100]
+        title_lower = title_part.lower()
         
-        # 공식 기관 키워드 (높은 가중치)
-        official_keywords = {
-            'tips': 20, '창업진흥원': 20, 'k-스타트업': 20,
-            '중소벤처기업부': 20, '과학기술정보통신부': 20,
-            '한국산업기술진흥원': 15, '정보통신산업진흥원': 15
+        # === 배제 키워드 체크 (무관한 지원 제외) ===
+        exclude_keywords = {
+            # 개인 지원 (창업과 무관)
+            '양육비': -50, '육아': -50, '출산': -50, '임신': -50,
+            '장학금': -50, '학자금': -50, '생활비': -50, '주거비': -50,
+            '의료비': -50, '치료비': -50, '간병': -50, '복지': -40,
+            
+            # 구직/채용 관련
+            '입사지원': -50, '채용': -40, '구인': -40, '구직': -40,
+            '인턴': -30, '직원모집': -40, '인재채용': -40,
+            
+            # 교육/수료 관련 (단순 교육)
+            '수료식': -50, '졸업식': -50, '입학': -40, '개강': -40,
+            '자격증': -30, '시험': -30, '합격': -30,
+            
+            # 이벤트/행사
+            '축제': -50, '공연': -50, '전시회': -40, '박람회': -20,
+            '세미나': -20, '포럼': -20, '컨퍼런스': -10,
+            
+            # 광고/홍보
+            '광고': -50, '홍보': -40, '마케팅': -30, '이벤트': -30,
+            '할인': -50, '쿠폰': -50, '프로모션': -40,
+            
+            # 기타 무관한 분야
+            '부동산': -50, '아파트': -50, '분양': -50,
+            '카페': -50, '맛집': -50, '음식점': -50,
+            '관광': -40, '여행': -40, '숙박': -40,
+            '종교': -50, '교회': -50, '절': -50,
+            '스포츠': -40, '운동': -40, '헬스': -40
         }
         
-        # 일반 긍정 키워드
-        positive_keywords = {
-            '창업': 10, '지원': 10, '사업': 8, '육성': 8,
-            '투자': 10, '지원금': 12, '보조금': 12,
-            '스타트업': 10, '벤처': 8, '혁신': 8
+        # === 필수 키워드 체크 (창업 지원사업 확인) ===
+        essential_contexts = {
+            # 자금 지원 맥락
+            'funding': any([
+                '투자' in text_lower and ('유치' in text_lower or '지원' in text_lower),
+                '자금' in text_lower and '지원' in text_lower,
+                '융자' in text_lower and ('지원' in text_lower or '사업' in text_lower),
+                '보조금' in text_lower,
+                '지원금' in text_lower,
+                bool(re.search(r'\d+억원.*지원|\d+천만원.*지원|\d+백만원.*지원', text_lower))
+            ]),
+            
+            # 창업/스타트업 맥락
+            'startup': any([
+                '창업' in text_lower and ('지원' in text_lower or '육성' in text_lower or '보육' in text_lower),
+                '스타트업' in text_lower and ('지원' in text_lower or '육성' in text_lower),
+                '벤처' in text_lower and ('지원' in text_lower or '육성' in text_lower),
+                '예비창업' in text_lower,
+                '초기창업' in text_lower,
+                '기술창업' in text_lower
+            ]),
+            
+            # 기업 지원 맥락
+            'business': any([
+                '중소기업' in text_lower and '지원' in text_lower,
+                '소상공인' in text_lower and '지원' in text_lower,
+                '기업' in text_lower and ('육성' in text_lower or '지원사업' in text_lower),
+                'r&d' in text_lower and '지원' in text_lower,
+                '기술개발' in text_lower and '지원' in text_lower
+            ]),
+            
+            # 공식 기관 맥락
+            'official': any([
+                'tips' in text_lower,
+                '창업진흥원' in text_lower,
+                'k-스타트업' in text_lower,
+                '중소벤처기업부' in text_lower,
+                '중기부' in text_lower,
+                '과학기술정보통신부' in text_lower,
+                '과기정통부' in text_lower,
+                '산업통상자원부' in text_lower,
+                '산업부' in text_lower
+            ])
         }
         
-        # 스팸 키워드 (큰 감점)
-        spam_keywords = {
-            '광고': -20, '홍보': -20, '이벤트': -15,
-            '수료식': -20, '캠페인': -15, '할인': -15,
-            '카페': -20, '맛집': -20, '부동산': -20
-        }
-        
+        # === 점수 계산 로직 ===
         keyword_score = 0
         
-        # 제목과 내용 구분 (제목에 스팸 키워드가 있으면 더 큰 감점)
-        title_part = text.split('\n')[0] if '\n' in text else text[:100]
-        
-        for keyword, score in official_keywords.items():
-            if keyword in text_lower:
-                keyword_score += score
-        
-        for keyword, score in positive_keywords.items():
-            if keyword in text_lower:
-                keyword_score += score
-        
-        for keyword, penalty in spam_keywords.items():
-            if keyword in title_part.lower():
+        # 1. 배제 키워드 체크 (제목에 있으면 더 강한 페널티)
+        for keyword, penalty in exclude_keywords.items():
+            if keyword in title_lower:
                 keyword_score += penalty * 2  # 제목에 있으면 2배 감점
+                logging.info(f"🚫 배제 키워드 발견 (제목): '{keyword}' → {penalty * 2}점")
             elif keyword in text_lower:
                 keyword_score += penalty
+                logging.info(f"🚫 배제 키워드 발견: '{keyword}' → {penalty}점")
         
-        # 3. 패턴 점수 (금액, 기간 등)
-        pattern_score = 0
+        # 2. 필수 맥락 체크
+        context_count = sum(1 for context in essential_contexts.values() if context)
         
-        # 금액 정보
+        # 필수 맥락이 하나도 없으면 큰 감점
+        if context_count == 0:
+            keyword_score -= 30
+            logging.info("⚠️ 창업/기업 지원 맥락 없음 → -30점")
+        else:
+            # 맥락이 있으면 가점
+            keyword_score += context_count * 15
+            logging.info(f"✅ 지원사업 맥락 {context_count}개 발견 → +{context_count * 15}점")
+        
+        # 3. 공식 기관 추가 가점
+        if essential_contexts['official']:
+            keyword_score += 25
+            logging.info("🏢 공식 기관 지원사업 → +25점")
+        
+        # 4. 상세 정보 체크
+        detail_score = 0
+        
+        # 지원 금액 명시
         if re.search(r'\d+억원|\d+천만원|\d+백만원', text):
-            pattern_score += 15
+            detail_score += 15
+            logging.info("💰 지원 금액 정보 → +15점")
         
-        # 기간 정보
-        if re.search(r'신청기간|마감일|접수기간|모집기간', text):
-            pattern_score += 10
+        # 신청 기간 명시
+        if re.search(r'신청기간|마감일|접수기간|모집기간|신청.*~.*\d+월', text):
+            detail_score += 10
+            logging.info("📅 신청 기간 정보 → +10점")
         
-        # 대상 정보
-        if re.search(r'지원대상|신청자격|대상기업', text):
-            pattern_score += 10
+        # 지원 대상 명시
+        if re.search(r'지원대상|신청자격|대상기업|지원자격', text):
+            detail_score += 10
+            logging.info("🎯 지원 대상 정보 → +10점")
         
-        # 4. 종합 점수 계산
+        # 5. 종합 점수 계산
         final_score = (
             probability * 100 * self.model_weights['deep_learning'] +
             keyword_score * self.model_weights['keyword_score'] +
-            pattern_score * self.model_weights['pattern_score']
+            detail_score * self.model_weights['pattern_score']
         )
         
         # 점수 범위 제한 (0-100)
         final_score = max(0, min(100, final_score))
+        
+        # 디버깅 정보
+        logging.info(f"📊 AI 점수 계산 완료: {final_score:.1f}점 (DL: {probability*100:.1f}, KW: {keyword_score}, DT: {detail_score})")
         
         return final_score
     

@@ -5,6 +5,9 @@ FROM python:3.10-slim
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
+    build-essential \
+    postgresql-client \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # 📁 작업 디렉토리 설정
@@ -24,9 +27,10 @@ COPY . .
 ENV FLASK_APP=run.py
 ENV FLASK_ENV=production
 ENV PYTHONPATH=/app
+ENV FLASK_PORT=5001
 
 # 🌐 포트 노출
-EXPOSE 5000
+EXPOSE 5001
 
 # 👤 non-root 사용자 생성 및 전환
 RUN useradd --create-home --shell /bin/bash app && \

@@ -35,7 +35,7 @@ class FeedbackHandler:
             
             # AI 엔진 참조 (나중에 설정)
             self.rl_optimizer = None
-            logger.info("🤖 강화학습 모듈 준비 완료")
+            logger.info("📊 피드백 처리 모듈 준비 완료")
             
         except Exception as e:
             logger.warning(f"⚠️ 강화학습 모듈 로드 실패: {e}")
@@ -428,9 +428,9 @@ class FeedbackHandler:
             deleted_site = deleted_program.get('site_name', '')
             
             # 활성화된 모든 프로그램 가져오기
-            active_programs = self.db_manager.get_all_programs(
-                include_inactive=False,
-                limit=1000
+            active_programs = self.db_manager.get_programs(
+                limit=1000,
+                active_only=True
             )
             
             self.auto_delete_status['total_programs'] = len(active_programs)
@@ -547,9 +547,18 @@ class FeedbackHandler:
     def get_auto_delete_status(self) -> Dict[str, Any]:
         """자동 삭제 진행 상황 반환"""
         if hasattr(self, 'auto_delete_status'):
-            return self.auto_delete_status
+            status = self.auto_delete_status.copy()
+            # progress 계산
+            if status.get('total_programs', 0) > 0:
+                status['progress'] = (status.get('processed', 0) / status['total_programs']) * 100
+            else:
+                status['progress'] = 0
+            # checked와 total 추가 (기존 코드와의 호환성)
+            status['checked'] = status.get('processed', 0)
+            status['total'] = status.get('total_programs', 0)
+            return status
         else:
-            return {'is_running': False}
+            return {'is_running': False, 'progress': 0, 'checked': 0, 'total': 0, 'deleted': 0}
     
     def get_learning_patterns(self) -> Dict[str, Any]:
         """학습된 패턴 정보 반환"""

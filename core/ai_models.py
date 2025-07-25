@@ -61,13 +61,13 @@ class AIModelManager:
     def load_bert_model(self):
         """BERT 모델 로드"""
         try:
-            logger.info("🔤 BERT 모델 로딩 중...")
+            logger.info("📝 한국어 BERT 모델 로딩 중...")
             self.bert_tokenizer = AutoTokenizer.from_pretrained(Config.BERT_MODEL_NAME)
             self.bert_model = AutoModel.from_pretrained(Config.BERT_MODEL_NAME)
             self.bert_model.to(self.device)
             self.bert_model.eval()
             self.models_loaded['bert'] = True
-            logger.info("✅ BERT 모델 로드 완료")
+            logger.info("✅ 한국어 BERT 모델 로드 완료")
         except Exception as e:
             logger.warning(f"⚠️ BERT 모델 로드 실패: {e}")
             self.models_loaded['bert'] = False
@@ -75,55 +75,28 @@ class AIModelManager:
     def load_sentence_model(self):
         """Sentence Transformer 모델 로드"""
         try:
-            logger.info("🔤 Sentence Transformer 로딩 중...")
+            logger.info("🔍 문장 유사도 모델 로딩 중...")
             self.sentence_model = SentenceTransformer(Config.SENTENCE_MODEL_NAME)
             if str(self.device) != 'cpu':
                 self.sentence_model = self.sentence_model.to(self.device)
             self.models_loaded['sentence'] = True
-            logger.info("✅ Sentence Transformer 로드 완료")
+            logger.info("✅ 문장 유사도 모델 로드 완료")
         except Exception as e:
             logger.warning(f"⚠️ Sentence Transformer 로드 실패: {e}")
             self.models_loaded['sentence'] = False
     
     def load_colab_models(self):
-        """Colab에서 훈련된 모델들 로드"""
-        try:
-            logger.info("📚 Colab 모델 로딩 중...")
-            
-            model_paths = {
-                'rf': Config.COLAB_RF_MODEL_PATH,
-                'gb': Config.COLAB_GB_MODEL_PATH,
-                'complete': Config.COLAB_COMPLETE_MODEL_PATH
-            }
-            
-            loaded_count = 0
-            for model_name, model_path in model_paths.items():
-                if model_path.exists():
-                    try:
-                        with open(model_path, 'rb') as f:
-                            self.colab_models[model_name] = pickle.load(f)
-                        loaded_count += 1
-                        logger.info(f"✅ {model_name} 모델 로드 완료")
-                    except Exception as e:
-                        logger.warning(f"⚠️ {model_name} 모델 로드 실패: {e}")
-            
-            if loaded_count > 0:
-                self.models_loaded['colab'] = True
-                logger.info(f"✅ Colab 모델 {loaded_count}개 로드 완료")
-            else:
-                logger.info("ℹ️ Colab 별도 훈련 모델 파일들이 없습니다. (딥러닝 모델로 대체)")
-                self.models_loaded['colab'] = False
-                
-        except Exception as e:
-            logger.error(f"❌ Colab 모델 로드 실패: {e}")
-            self.models_loaded['colab'] = False
+        """Colab에서 훈련된 모델들 로드 (현재 사용하지 않음)"""
+        # 이전 버전과의 호환성을 위해 메서드는 유지하되 아무것도 하지 않음
+        self.models_loaded['colab'] = False
+        return
     
     def load_deep_learning_model(self):
         """딥러닝 모델 로드"""
         try:
             from .deep_learning_engine import get_deep_learning_engine
             
-            logger.info("🧠 딥러닝 모델 로딩 중...")
+            logger.info("🤖 강화학습 모델 로딩 중...")
             self.deep_learning_model = get_deep_learning_engine()
             
             if self.deep_learning_model and hasattr(self.deep_learning_model, 'is_loaded'):

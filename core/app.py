@@ -59,7 +59,7 @@ def create_app():
     
     # 서비스 초기화
     try:
-        logger.info("🚀 스타트업 모니터링 시스템 초기화 시작")
+        logger.info("🚀 AI 지원사업 모니터링 시스템 초기화")
         
         # 데이터베이스 연결
         logger.info("🔗 데이터베이스 연결 중...")

@@ -9,7 +9,7 @@ import os
 import json
 import logging
 import requests
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Tuple
 from datetime import datetime
 import hashlib
 
@@ -200,7 +200,7 @@ class DatabaseManager:
                 except:
                     pass
             
-            url += f"&order=created_at.desc&offset={offset}&limit={limit}"
+            url += f"&order=ai_score.desc&offset={offset}&limit={limit}"
             
             response = requests.get(url, headers=self.headers)
             
@@ -286,7 +286,7 @@ class DatabaseManager:
         """특정 테이블에서 프로그램 데이터 조회"""
         try:
             url = f"{self.api_base_url}/{table_name}?select=*"
-            url += f"&order=created_at.desc&offset={offset}&limit={limit}"
+            url += f"&order=ai_score.desc&offset={offset}&limit={limit}"
             
             response = requests.get(url, headers=self.headers)
             
@@ -314,6 +314,25 @@ class DatabaseManager:
         except Exception as e:
             self.logger.error(f"❌ 프로그램 조회 실패: {e}")
             return None
+    
+    def check_program_exists(self, url: str) -> Tuple[bool, bool]:
+        """URL로 프로그램 존재 여부 확인
+        Returns: (exists, is_active) - 존재여부, 활성상태
+        """
+        try:
+            # URL 기반 external_id 생성
+            external_id = hashlib.md5(url.encode()).hexdigest()[:16]
+            
+            result = self.supabase.table('support_programs').select('is_active').eq('external_id', external_id).execute()
+            
+            if result.data and len(result.data) > 0:
+                is_active = result.data[0].get('is_active', True)
+                return True, is_active
+            return False, False
+            
+        except Exception as e:
+            self.logger.error(f"❌ 프로그램 존재 확인 실패: {e}")
+            return False, False
     
     def deactivate_program(self, external_id: str) -> bool:
         """프로그램 비활성화 (삭제)"""

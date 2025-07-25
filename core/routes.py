@@ -47,6 +47,15 @@ def create_routes(program_service, dashboard_service, ai_service):
             logger.error(traceback.format_exc())
             return render_template('error.html', error=str(e)), 500
     
+    @bp.route('/health')
+    def health():
+        """헬스체크 엔드포인트"""
+        return jsonify({
+            'status': 'healthy',
+            'service': 'AI Startup Monitor',
+            'timestamp': datetime.now().isoformat()
+        }), 200
+
     @bp.route('/programs')
     def programs_list():
         """프로그램 목록 페이지"""
